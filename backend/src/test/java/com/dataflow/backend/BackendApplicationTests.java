@@ -21,7 +21,7 @@ class BackendApplicationTests {
     @Test
     void shouldCreateUserWithEncryptedPassword() {
 
-        String email = "bcrypt-test@dataflow.com";
+        String email = "bcrypt-test-" + System.currentTimeMillis() + "@dataflow.com";
         String rawPassword = "MySecurePassword123";
 
         User user = userService.createUser(email, rawPassword);
