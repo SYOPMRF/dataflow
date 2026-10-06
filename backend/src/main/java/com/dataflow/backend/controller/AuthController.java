@@ -1,6 +1,8 @@
 package com.dataflow.backend.controller;
 
+import com.dataflow.backend.dto.LoginResponse;
 import com.dataflow.backend.dto.RegisterRequest;
+import com.dataflow.backend.security.JwtService;
 import com.dataflow.backend.dto.UserResponse;
 import com.dataflow.backend.entity.User;
 import com.dataflow.backend.service.UserService;
@@ -14,9 +16,14 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final UserService userService;
+    private final JwtService jwtService;
 
-    public AuthController(UserService userService) {
+    public AuthController(
+            UserService userService,
+            JwtService jwtService
+    ) {
         this.userService = userService;
+        this.jwtService = jwtService;
     }
 
     @PostMapping("/register")
@@ -32,17 +39,18 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public UserResponse login(@Valid @RequestBody LoginRequest request) {
+    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
 
         User user = userService.authenticate(
-            request.getEmail(),
-            request.getPassword()
+                request.getEmail(),
+                request.getPassword()
         );
 
-        if (user == null) {
-            throw new IllegalArgumentException("Invalid email or password");
-        }
+        String token = jwtService.generateToken(user.getEmail());
 
-        return UserResponse.fromEntity(user);
-}
+        return new LoginResponse(
+                token,
+                UserResponse.fromEntity(user)
+        );
+    }
 }
