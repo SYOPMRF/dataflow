@@ -6,6 +6,7 @@ import com.dataflow.backend.enums.FileStatus;
 import com.dataflow.backend.repository.FileRepository;
 import org.springframework.stereotype.Service;
 import com.dataflow.backend.exception.ResourceNotFoundException;
+import com.dataflow.backend.service.FileStorageService;
 
 import java.util.List;
 
@@ -13,9 +14,14 @@ import java.util.List;
 public class FileService {
 
     private final FileRepository fileRepository;
+    private final FileStorageService fileStorageService;
 
-    public FileService(FileRepository fileRepository) {
+    public FileService(
+            FileRepository fileRepository,
+            FileStorageService fileStorageService
+    ) {
         this.fileRepository = fileRepository;
+        this.fileStorageService = fileStorageService;
     }
 
     public File createFile(
@@ -34,7 +40,17 @@ public class FileService {
         file.setFileSize(fileSize);
         file.setStatus(FileStatus.UPLOADED);
 
-        return fileRepository.save(file);
+        try {
+            return fileRepository.save(file);
+        } catch (RuntimeException exception) {
+            try {
+                fileStorageService.delete(storedName);
+            } catch (RuntimeException cleanupException) {
+                exception.addSuppressed(cleanupException);
+            }
+
+            throw exception;
+        }
     }
 
     public List<File> getUserFiles(User user) {
@@ -50,8 +66,9 @@ public class FileService {
     }
 
     public void deleteFile(Long fileId, User user) {
-
         File file = getUserFile(fileId, user);
+
+        fileStorageService.delete(file.getStoredName());
 
         fileRepository.delete(file);
     }

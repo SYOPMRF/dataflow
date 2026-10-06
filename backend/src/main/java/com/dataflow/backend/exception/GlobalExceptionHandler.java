@@ -58,4 +58,12 @@ public class GlobalExceptionHandler {
     ) {
         return Map.of("error", exception.getMessage());
     }
+
+    @ExceptionHandler(InvalidFileException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleInvalidFile(
+            InvalidFileException exception
+    ) {
+        return Map.of("error", exception.getMessage());
+    }
 }

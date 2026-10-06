@@ -4,10 +4,12 @@ import com.dataflow.backend.dto.FileResponse;
 import com.dataflow.backend.entity.File;
 import com.dataflow.backend.entity.User;
 import com.dataflow.backend.service.FileService;
+import com.dataflow.backend.service.FileStorageService;
 import com.dataflow.backend.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -16,44 +18,43 @@ import java.util.List;
 public class FileController {
 
     private final FileService fileService;
+    private final FileStorageService fileStorageService;
     private final UserService userService;
 
     public FileController(
             FileService fileService,
+            FileStorageService fileStorageService,
             UserService userService
     ) {
         this.fileService = fileService;
+        this.fileStorageService = fileStorageService;
         this.userService = userService;
     }
 
-    @PostMapping
+    @PostMapping("/upload")
     @ResponseStatus(HttpStatus.CREATED)
-    public FileResponse createFile(
-            Authentication authentication,
-            @RequestParam String originalName,
-            @RequestParam String storedName,
-            @RequestParam String fileType,
-            @RequestParam Long fileSize
+    public FileResponse uploadFile(
+            @RequestParam("file") MultipartFile file,
+            Authentication authentication
     ) {
-
         User user = getAuthenticatedUser(authentication);
 
-        File file = fileService.createFile(
+        FileStorageService.StoredFile storedFile =
+                fileStorageService.store(file);
+
+        File savedFile = fileService.createFile(
                 user,
-                originalName,
-                storedName,
-                fileType,
-                fileSize
+                storedFile.originalName(),
+                storedFile.storedName(),
+                storedFile.fileType(),
+                storedFile.fileSize()
         );
 
-        return FileResponse.fromEntity(file);
+        return FileResponse.fromEntity(savedFile);
     }
 
     @GetMapping
-    public List<FileResponse> getFiles(
-            Authentication authentication
-    ) {
-
+    public List<FileResponse> getFiles(Authentication authentication) {
         User user = getAuthenticatedUser(authentication);
 
         return fileService.getUserFiles(user)
@@ -67,7 +68,6 @@ public class FileController {
             @PathVariable Long id,
             Authentication authentication
     ) {
-
         User user = getAuthenticatedUser(authentication);
 
         File file = fileService.getUserFile(id, user);
@@ -81,14 +81,12 @@ public class FileController {
             @PathVariable Long id,
             Authentication authentication
     ) {
-
         User user = getAuthenticatedUser(authentication);
 
         fileService.deleteFile(id, user);
     }
 
     private User getAuthenticatedUser(Authentication authentication) {
-
         return userService.findByEmail(authentication.getName());
     }
 }
