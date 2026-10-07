@@ -19,6 +19,10 @@ public class FileStorageService {
 
     private final Path storageLocation;
 
+    public Path getFilePath(String storedName) {
+        return storageLocation.resolve(storedName).normalize();
+    }   
+
     public FileStorageService(FileStorageProperties properties) {
         this.storageLocation = Paths.get(properties.getLocation())
                 .toAbsolutePath()

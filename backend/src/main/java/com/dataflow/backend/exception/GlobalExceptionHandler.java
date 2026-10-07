@@ -66,4 +66,14 @@ public class GlobalExceptionHandler {
     ) {
         return Map.of("error", exception.getMessage());
     }
+
+    @ExceptionHandler(FileProcessingException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public Map<String, String> handleFileProcessingException(
+            FileProcessingException exception
+    ) {
+        return Map.of(
+                "error", exception.getMessage()
+        );
+    }
 }

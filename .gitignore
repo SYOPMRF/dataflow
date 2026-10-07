@@ -37,3 +37,6 @@ build/
 
 # Local data
 uploads/
+
+# Local test files
+backend/*.csv
