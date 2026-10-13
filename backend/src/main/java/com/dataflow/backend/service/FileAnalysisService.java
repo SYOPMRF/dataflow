@@ -1,20 +1,23 @@
 package com.dataflow.backend.service;
 
 import com.dataflow.backend.dto.AnalysisResult;
+import com.dataflow.backend.dto.ColumnAnalysis;
+import com.dataflow.backend.dto.DataQualityIssue;
 import com.dataflow.backend.entity.AnalysisResultEntity;
 import com.dataflow.backend.entity.File;
 import com.dataflow.backend.entity.FileColumn;
+import com.dataflow.backend.entity.User;
+import com.dataflow.backend.enums.FileStatus;
+import com.dataflow.backend.exception.FileProcessingException;
+import com.dataflow.backend.exception.ResourceNotFoundException;
 import com.dataflow.backend.repository.AnalysisResultRepository;
+import com.dataflow.backend.repository.DataQualityIssueRepository;
 import com.dataflow.backend.repository.FileColumnRepository;
 import com.dataflow.backend.repository.FileRepository;
-import org.springframework.stereotype.Service;
-import com.dataflow.backend.entity.User;
 import com.dataflow.backend.repository.UserRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import com.dataflow.backend.enums.FileStatus;
-import com.dataflow.backend.exception.ResourceNotFoundException;
-import com.dataflow.backend.exception.FileProcessingException;
+import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -29,6 +32,8 @@ public class FileAnalysisService {
     private final FileColumnRepository fileColumnRepository;
     private final DataServiceClient dataServiceClient;
     private final FileStorageService fileStorageService;
+    private final DataQualityIssueRepository dataQualityIssueRepository;
+    private final AnalysisPersistenceService analysisPersistenceService;
 
     public FileAnalysisService(
             FileRepository fileRepository,
@@ -36,7 +41,9 @@ public class FileAnalysisService {
             AnalysisResultRepository analysisResultRepository,
             FileColumnRepository fileColumnRepository,
             DataServiceClient dataServiceClient,
-            FileStorageService fileStorageService
+            FileStorageService fileStorageService,
+            DataQualityIssueRepository dataQualityIssueRepository,
+            AnalysisPersistenceService analysisPersistenceService
     ) {
         this.fileRepository = fileRepository;
         this.userRepository = userRepository;
@@ -44,6 +51,8 @@ public class FileAnalysisService {
         this.fileColumnRepository = fileColumnRepository;
         this.dataServiceClient = dataServiceClient;
         this.fileStorageService = fileStorageService;
+        this.dataQualityIssueRepository = dataQualityIssueRepository;
+        this.analysisPersistenceService = analysisPersistenceService;
     }
 
     public AnalysisResult analyzeFile(Long fileId) throws IOException {
@@ -54,26 +63,28 @@ public class FileAnalysisService {
     String email = authentication.getName();
 
     User user = userRepository.findByEmail(email)
-            .orElseThrow(() -> new RuntimeException("User not found"));
+            .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
     File file = fileRepository.findByIdAndUser(fileId, user)
             .orElseThrow(() -> new ResourceNotFoundException("File not found"));
 
-    if (file.getStatus() == FileStatus.COMPLETED) {
-        throw new IllegalArgumentException("File has already been processed");
-    }
+    int claimedRows = fileRepository.claimForProcessing(
+            fileId,
+            user,
+            FileStatus.PROCESSING,
+            java.util.List.of(FileStatus.UPLOADED, FileStatus.FAILED)
+    );
 
-    if (file.getStatus() == FileStatus.PROCESSING) {
+    if (claimedRows == 0) {
+        if (file.getStatus() == FileStatus.COMPLETED) {
+            throw new IllegalArgumentException("File has already been processed");
+        }
+
         throw new IllegalArgumentException("File is already being processed");
     }
 
-    file.setStatus(FileStatus.PROCESSING);
-    fileRepository.save(file);
-
     try {
-
         Path filePath = fileStorageService.getFilePath(file.getStoredName());
-
         byte[] fileContent = Files.readAllBytes(filePath);
 
         AnalysisResult analysisResult = dataServiceClient.analyzeFile(
@@ -81,63 +92,15 @@ public class FileAnalysisService {
                 file.getOriginalName()
         );
 
-        AnalysisResultEntity analysisEntity = new AnalysisResultEntity();
-
-        analysisEntity.setFile(file);
-        analysisEntity.setRowCount(analysisResult.rowCount());
-        analysisEntity.setColumnCount(analysisResult.columnCount());
-        analysisEntity.setMissingCount(analysisResult.missingCount());
-        analysisEntity.setDuplicateCount(analysisResult.duplicateCount());
-
-        analysisResultRepository.save(analysisEntity);
-
-        for (var column : analysisResult.columns()) {
-
-            FileColumn columnEntity = new FileColumn();
-
-            columnEntity.setFile(file);
-            columnEntity.setName(column.name());
-            columnEntity.setDataType(column.dataType());
-            columnEntity.setNullCount(column.nullCount());
-            columnEntity.setUniqueCount(column.uniqueCount());
-            columnEntity.setUniquePercentage(column.uniquePercentage());
-            columnEntity.setDuplicateCount(column.duplicateCount());
-            columnEntity.setDuplicatedUniqueCount(column.duplicatedUniqueCount());
-            columnEntity.setMissingPercentage(column.missingPercentage());
-            columnEntity.setCompletelyEmpty(column.isCompletelyEmpty());
-
-            columnEntity.setMinValue(
-                    column.minValue() != null
-                            ? column.minValue().toString()
-                            : null
-            );
-
-            columnEntity.setMaxValue(
-                    column.maxValue() != null
-                            ? column.maxValue().toString()
-                            : null
-            );
-
-            columnEntity.setMeanValue(column.meanValue());
-            columnEntity.setMedianValue(column.medianValue());
-            columnEntity.setStdDeviation(column.stdDeviation());
-            columnEntity.setZeroCount(column.zeroCount());
-            columnEntity.setNegativeCount(column.negativeCount());
-
-            fileColumnRepository.save(columnEntity);
-        }
-
-        file.setStatus(FileStatus.COMPLETED);
-        file.setProcessedAt(java.time.LocalDateTime.now());
-
-        fileRepository.save(file);
-
+        analysisPersistenceService.persistAnalysis(fileId, analysisResult);
         return analysisResult;
 
     } catch (Exception exception) {
-
-        file.setStatus(FileStatus.FAILED);
-        fileRepository.save(file);
+        fileRepository.markAsFailedIfProcessing(
+                fileId,
+                FileStatus.PROCESSING,
+                FileStatus.FAILED
+        );
 
         throw new FileProcessingException(
                 "Failed to process file",
@@ -145,4 +108,64 @@ public class FileAnalysisService {
         );
     }
 }
+
+    public AnalysisResult getAnalysis(Long fileId) {
+
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        String email = authentication.getName();
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        File file = fileRepository.findByIdAndUser(fileId, user)
+                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
+
+        AnalysisResultEntity analysisEntity =
+                analysisResultRepository.findByFileId(fileId)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException("Analysis not found"));
+
+        var columns = fileColumnRepository.findAllByFileId(fileId)
+                .stream()
+                .map(column -> new ColumnAnalysis(
+                        column.getName(),
+                        column.getDataType(),
+                        column.getNullCount(),
+                        column.getUniqueCount(),
+                        column.getUniquePercentage(),
+                        column.getDuplicateCount(),
+                        column.getDuplicatedUniqueCount(),
+                        column.getMissingPercentage(),
+                        column.isCompletelyEmpty(),
+                        column.getMinValue(),
+                        column.getMaxValue(),
+                        column.getMeanValue(),
+                        column.getMedianValue(),
+                        column.getStdDeviation(),
+                        column.getZeroCount(),
+                        column.getNegativeCount()
+                ))
+                .toList();
+
+        var qualityIssues = dataQualityIssueRepository.findAllByFileId(fileId)
+                .stream()
+                .map(issue -> new DataQualityIssue(
+                        issue.getColumnName(),
+                        issue.getIssueType(),
+                        issue.getSeverity(),
+                        issue.getMessage()
+                ))
+                .toList();
+
+        return new AnalysisResult(
+                analysisEntity.getRowCount(),
+                analysisEntity.getColumnCount(),
+                analysisEntity.getMissingCount(),
+                analysisEntity.getDuplicateCount(),
+                columns,
+                qualityIssues
+        );
+    }
 }

@@ -20,4 +20,9 @@ public class FileAnalysisController {
     public AnalysisResult processFile(@PathVariable Long id) throws IOException {
         return fileAnalysisService.analyzeFile(id);
     }
+
+    @GetMapping("/{id}/analysis")
+    public AnalysisResult getAnalysis(@PathVariable Long id) {
+        return fileAnalysisService.getAnalysis(id);
+    }
 }

@@ -9,7 +9,16 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "spring.datasource.url=jdbc:postgresql://localhost:5432/dataflow_test",
+        "spring.datasource.username=poysmon",
+        "spring.datasource.password=",
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.jpa.show-sql=false",
+        "file.storage.location=target/test-uploads",
+        "jwt.secret=DataFlowTestSecretKeyMustBeAtLeast32BytesLong!",
+        "jwt.expiration-ms=3600000"
+})
 class BackendApplicationTests {
 
     @Autowired
