@@ -1,11 +1,13 @@
 package com.dataflow.backend;
 
 import com.dataflow.backend.entity.AnalysisResultEntity;
+import com.dataflow.backend.entity.DataQualityIssueEntity;
 import com.dataflow.backend.entity.File;
 import com.dataflow.backend.entity.FileColumn;
 import com.dataflow.backend.entity.User;
 import com.dataflow.backend.enums.FileStatus;
 import com.dataflow.backend.repository.AnalysisResultRepository;
+import com.dataflow.backend.repository.DataQualityIssueRepository;
 import com.dataflow.backend.repository.FileColumnRepository;
 import com.dataflow.backend.repository.FileRepository;
 import com.dataflow.backend.repository.UserRepository;
@@ -55,6 +57,9 @@ class FileAnalysisHttpIntegrationTest {
 
     @Autowired
     private FileColumnRepository fileColumnRepository;
+
+    @Autowired
+    private DataQualityIssueRepository dataQualityIssueRepository;
 
     private User owner;
     private User otherUser;
@@ -107,6 +112,15 @@ class FileAnalysisHttpIntegrationTest {
     void ownerCanRetrievePersistedAnalysis() throws Exception {
         String token = jwtService.generateToken(owner.getEmail());
 
+        DataQualityIssueEntity issue = new DataQualityIssueEntity();
+        issue.setFile(file);
+        issue.setColumnName("age");
+        issue.setIssueType("NEGATIVE_VALUES");
+        issue.setSeverity("MEDIUM");
+        issue.setMessage("Column 'age' contains 1 negative values.");
+
+        dataQualityIssueRepository.saveAndFlush(issue);
+
         mockMvc.perform(get("/api/files/{id}/analysis", file.getId())
                 .header("Authorization", "Bearer " + token)
                 .accept(MediaType.APPLICATION_JSON))
@@ -118,7 +132,12 @@ class FileAnalysisHttpIntegrationTest {
                 .andExpect(jsonPath("$.columns", hasSize(1)))
                 .andExpect(jsonPath("$.columns[0].name").value("age"))
                 .andExpect(jsonPath("$.columns[0].data_type").value("integer"))
-                .andExpect(jsonPath("$.quality_issues", hasSize(0)));
+                .andExpect(jsonPath("$.quality_issues", hasSize(1)))
+                .andExpect(jsonPath("$.quality_issues[0].column_name").value("age"))
+                .andExpect(jsonPath("$.quality_issues[0].issue_type").value("NEGATIVE_VALUES"))
+                .andExpect(jsonPath("$.quality_issues[0].severity").value("MEDIUM"))
+                .andExpect(jsonPath("$.quality_issues[0].message")
+                        .value("Column 'age' contains 1 negative values."));
     }
 
     @Test
