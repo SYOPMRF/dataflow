@@ -24,6 +24,7 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -156,6 +157,23 @@ class FileAnalysisHttpIntegrationTest {
         mockMvc.perform(get("/api/files/{id}/analysis", file.getId())
                 .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized());
+    }
+
+
+    @Test
+    void registeringAnExistingEmailReturnsConflict() throws Exception {
+        String requestBody = """
+                {
+                    "email": "%s",
+                    "password": "ValidPassword123"
+                }
+                """.formatted(owner.getEmail());
+
+        mockMvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestBody))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("Email is already registered"));
     }
 
     private User createUser(String prefix) {

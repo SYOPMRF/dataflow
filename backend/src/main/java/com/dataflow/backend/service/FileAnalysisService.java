@@ -9,6 +9,7 @@ import com.dataflow.backend.entity.FileColumn;
 import com.dataflow.backend.entity.User;
 import com.dataflow.backend.enums.FileStatus;
 import com.dataflow.backend.exception.FileProcessingException;
+import com.dataflow.backend.exception.ConflictException;
 import com.dataflow.backend.exception.ResourceNotFoundException;
 import com.dataflow.backend.repository.AnalysisResultRepository;
 import com.dataflow.backend.repository.DataQualityIssueRepository;
@@ -26,146 +27,134 @@ import java.nio.file.Path;
 @Service
 public class FileAnalysisService {
 
-    private final FileRepository fileRepository;
-    private final UserRepository userRepository;
-    private final AnalysisResultRepository analysisResultRepository;
-    private final FileColumnRepository fileColumnRepository;
-    private final DataServiceClient dataServiceClient;
-    private final FileStorageService fileStorageService;
-    private final DataQualityIssueRepository dataQualityIssueRepository;
-    private final AnalysisPersistenceService analysisPersistenceService;
+        private final FileRepository fileRepository;
+        private final UserRepository userRepository;
+        private final AnalysisResultRepository analysisResultRepository;
+        private final FileColumnRepository fileColumnRepository;
+        private final DataServiceClient dataServiceClient;
+        private final FileStorageService fileStorageService;
+        private final DataQualityIssueRepository dataQualityIssueRepository;
+        private final AnalysisPersistenceService analysisPersistenceService;
 
-    public FileAnalysisService(
-            FileRepository fileRepository,
-            UserRepository userRepository,
-            AnalysisResultRepository analysisResultRepository,
-            FileColumnRepository fileColumnRepository,
-            DataServiceClient dataServiceClient,
-            FileStorageService fileStorageService,
-            DataQualityIssueRepository dataQualityIssueRepository,
-            AnalysisPersistenceService analysisPersistenceService
-    ) {
-        this.fileRepository = fileRepository;
-        this.userRepository = userRepository;
-        this.analysisResultRepository = analysisResultRepository;
-        this.fileColumnRepository = fileColumnRepository;
-        this.dataServiceClient = dataServiceClient;
-        this.fileStorageService = fileStorageService;
-        this.dataQualityIssueRepository = dataQualityIssueRepository;
-        this.analysisPersistenceService = analysisPersistenceService;
-    }
-
-    public AnalysisResult analyzeFile(Long fileId) throws IOException {
-
-    Authentication authentication =
-            SecurityContextHolder.getContext().getAuthentication();
-
-    String email = authentication.getName();
-
-    User user = userRepository.findByEmail(email)
-            .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
-    File file = fileRepository.findByIdAndUser(fileId, user)
-            .orElseThrow(() -> new ResourceNotFoundException("File not found"));
-
-    int claimedRows = fileRepository.claimForProcessing(
-            fileId,
-            user,
-            FileStatus.PROCESSING,
-            java.util.List.of(FileStatus.UPLOADED, FileStatus.FAILED)
-    );
-
-    if (claimedRows == 0) {
-        if (file.getStatus() == FileStatus.COMPLETED) {
-            throw new IllegalArgumentException("File has already been processed");
+        public FileAnalysisService(
+                        FileRepository fileRepository,
+                        UserRepository userRepository,
+                        AnalysisResultRepository analysisResultRepository,
+                        FileColumnRepository fileColumnRepository,
+                        DataServiceClient dataServiceClient,
+                        FileStorageService fileStorageService,
+                        DataQualityIssueRepository dataQualityIssueRepository,
+                        AnalysisPersistenceService analysisPersistenceService) {
+                this.fileRepository = fileRepository;
+                this.userRepository = userRepository;
+                this.analysisResultRepository = analysisResultRepository;
+                this.fileColumnRepository = fileColumnRepository;
+                this.dataServiceClient = dataServiceClient;
+                this.fileStorageService = fileStorageService;
+                this.dataQualityIssueRepository = dataQualityIssueRepository;
+                this.analysisPersistenceService = analysisPersistenceService;
         }
 
-        throw new IllegalArgumentException("File is already being processed");
-    }
+        public AnalysisResult analyzeFile(Long fileId) throws IOException {
 
-    try {
-        Path filePath = fileStorageService.getFilePath(file.getStoredName());
-        byte[] fileContent = Files.readAllBytes(filePath);
+                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-        AnalysisResult analysisResult = dataServiceClient.analyzeFile(
-                fileContent,
-                file.getOriginalName()
-        );
+                String email = authentication.getName();
 
-        analysisPersistenceService.persistAnalysis(fileId, analysisResult);
-        return analysisResult;
+                User user = userRepository.findByEmail(email)
+                                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-    } catch (Exception exception) {
-        fileRepository.markAsFailedIfProcessing(
-                fileId,
-                FileStatus.PROCESSING,
-                FileStatus.FAILED
-        );
+                File file = fileRepository.findByIdAndUser(fileId, user)
+                                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
 
-        throw new FileProcessingException(
-                "Failed to process file",
-                exception
-        );
-    }
-}
+                int claimedRows = fileRepository.claimForProcessing(
+                                fileId,
+                                user,
+                                FileStatus.PROCESSING,
+                                java.util.List.of(FileStatus.UPLOADED, FileStatus.FAILED));
 
-    public AnalysisResult getAnalysis(Long fileId) {
+                if (claimedRows == 0) {
+                        if (file.getStatus() == FileStatus.COMPLETED) {
+                                throw new ConflictException("File has already been processed");
+                        }
 
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
+                        throw new ConflictException("File is already being processed");
+                }
 
-        String email = authentication.getName();
+                try {
+                        Path filePath = fileStorageService.getFilePath(file.getStoredName());
+                        byte[] fileContent = Files.readAllBytes(filePath);
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                        AnalysisResult analysisResult = dataServiceClient.analyzeFile(
+                                        fileContent,
+                                        file.getOriginalName());
 
-        File file = fileRepository.findByIdAndUser(fileId, user)
-                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
+                        analysisPersistenceService.persistAnalysis(fileId, analysisResult);
+                        return analysisResult;
 
-        AnalysisResultEntity analysisEntity =
-                analysisResultRepository.findByFileId(fileId)
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException("Analysis not found"));
+                } catch (Exception exception) {
+                        fileRepository.markAsFailedIfProcessing(
+                                        fileId,
+                                        FileStatus.PROCESSING,
+                                        FileStatus.FAILED);
 
-        var columns = fileColumnRepository.findAllByFileId(fileId)
-                .stream()
-                .map(column -> new ColumnAnalysis(
-                        column.getName(),
-                        column.getDataType(),
-                        column.getNullCount(),
-                        column.getUniqueCount(),
-                        column.getUniquePercentage(),
-                        column.getDuplicateCount(),
-                        column.getDuplicatedUniqueCount(),
-                        column.getMissingPercentage(),
-                        column.isCompletelyEmpty(),
-                        column.getMinValue(),
-                        column.getMaxValue(),
-                        column.getMeanValue(),
-                        column.getMedianValue(),
-                        column.getStdDeviation(),
-                        column.getZeroCount(),
-                        column.getNegativeCount()
-                ))
-                .toList();
+                        throw new FileProcessingException(
+                                        "Failed to process file",
+                                        exception);
+                }
+        }
 
-        var qualityIssues = dataQualityIssueRepository.findAllByFileId(fileId)
-                .stream()
-                .map(issue -> new DataQualityIssue(
-                        issue.getColumnName(),
-                        issue.getIssueType(),
-                        issue.getSeverity(),
-                        issue.getMessage()
-                ))
-                .toList();
+        public AnalysisResult getAnalysis(Long fileId) {
 
-        return new AnalysisResult(
-                analysisEntity.getRowCount(),
-                analysisEntity.getColumnCount(),
-                analysisEntity.getMissingCount(),
-                analysisEntity.getDuplicateCount(),
-                columns,
-                qualityIssues
-        );
-    }
+                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+                String email = authentication.getName();
+
+                User user = userRepository.findByEmail(email)
+                                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+                File file = fileRepository.findByIdAndUser(fileId, user)
+                                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
+
+                AnalysisResultEntity analysisEntity = analysisResultRepository.findByFileId(fileId)
+                                .orElseThrow(() -> new ResourceNotFoundException("Analysis not found"));
+
+                var columns = fileColumnRepository.findAllByFileId(fileId)
+                                .stream()
+                                .map(column -> new ColumnAnalysis(
+                                                column.getName(),
+                                                column.getDataType(),
+                                                column.getNullCount(),
+                                                column.getUniqueCount(),
+                                                column.getUniquePercentage(),
+                                                column.getDuplicateCount(),
+                                                column.getDuplicatedUniqueCount(),
+                                                column.getMissingPercentage(),
+                                                column.isCompletelyEmpty(),
+                                                column.getMinValue(),
+                                                column.getMaxValue(),
+                                                column.getMeanValue(),
+                                                column.getMedianValue(),
+                                                column.getStdDeviation(),
+                                                column.getZeroCount(),
+                                                column.getNegativeCount()))
+                                .toList();
+
+                var qualityIssues = dataQualityIssueRepository.findAllByFileId(fileId)
+                                .stream()
+                                .map(issue -> new DataQualityIssue(
+                                                issue.getColumnName(),
+                                                issue.getIssueType(),
+                                                issue.getSeverity(),
+                                                issue.getMessage()))
+                                .toList();
+
+                return new AnalysisResult(
+                                analysisEntity.getRowCount(),
+                                analysisEntity.getColumnCount(),
+                                analysisEntity.getMissingCount(),
+                                analysisEntity.getDuplicateCount(),
+                                columns,
+                                qualityIssues);
+        }
 }

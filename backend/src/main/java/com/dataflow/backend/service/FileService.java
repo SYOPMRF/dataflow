@@ -18,8 +18,7 @@ public class FileService {
 
     public FileService(
             FileRepository fileRepository,
-            FileStorageService fileStorageService
-    ) {
+            FileStorageService fileStorageService) {
         this.fileRepository = fileRepository;
         this.fileStorageService = fileStorageService;
     }
@@ -29,8 +28,7 @@ public class FileService {
             String originalName,
             String storedName,
             String fileType,
-            Long fileSize
-    ) {
+            Long fileSize) {
         File file = new File();
 
         file.setUser(user);
@@ -60,9 +58,7 @@ public class FileService {
     public File getUserFile(Long fileId, User user) {
 
         return fileRepository.findByIdAndUser(fileId, user)
-            .orElseThrow(() ->
-                    new ResourceNotFoundException("File not found")
-            );
+                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
     }
 
     public void deleteFile(Long fileId, User user) {

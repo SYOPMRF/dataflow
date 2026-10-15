@@ -9,6 +9,7 @@ import com.dataflow.backend.repository.AnalysisResultRepository;
 import com.dataflow.backend.repository.DataQualityIssueRepository;
 import com.dataflow.backend.repository.FileColumnRepository;
 import com.dataflow.backend.repository.FileRepository;
+import com.dataflow.backend.exception.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,7 +38,7 @@ public class AnalysisPersistenceService {
     @Transactional
     public void persistAnalysis(Long fileId, AnalysisResult analysisResult) {
         File file = fileRepository.findById(fileId)
-                .orElseThrow(() -> new IllegalArgumentException("File not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
 
         AnalysisResultEntity analysisEntity = new AnalysisResultEntity();
         analysisEntity.setFile(file);

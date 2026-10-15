@@ -3,7 +3,6 @@ package com.dataflow.backend.exception;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
-import com.dataflow.backend.exception.InvalidCredentialsException;
 
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -11,14 +10,18 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(IllegalArgumentException.class)
+    @ExceptionHandler(ConflictException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, String> handleConflict(ConflictException exception) {
+        return Map.of("error", exception.getMessage());
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> handleIllegalArgumentException(
             IllegalArgumentException exception
     ) {
-        return Map.of(
-                "error", exception.getMessage()
-        );
+        return Map.of("error", exception.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -26,7 +29,6 @@ public class GlobalExceptionHandler {
     public Map<String, Object> handleValidationException(
             MethodArgumentNotValidException exception
     ) {
-
         Map<String, String> errors = exception.getBindingResult()
                 .getFieldErrors()
                 .stream()
@@ -36,9 +38,7 @@ public class GlobalExceptionHandler {
                         (first, second) -> first
                 ));
 
-        return Map.of(
-                "errors", errors
-        );
+        return Map.of("errors", errors);
     }
 
     @ExceptionHandler(InvalidCredentialsException.class)
@@ -46,9 +46,7 @@ public class GlobalExceptionHandler {
     public Map<String, String> handleInvalidCredentials(
             InvalidCredentialsException exception
     ) {
-        return Map.of(
-                "error", exception.getMessage()
-        );
+        return Map.of("error", exception.getMessage());
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -72,8 +70,6 @@ public class GlobalExceptionHandler {
     public Map<String, String> handleFileProcessingException(
             FileProcessingException exception
     ) {
-        return Map.of(
-                "error", exception.getMessage()
-        );
+        return Map.of("error", exception.getMessage());
     }
 }

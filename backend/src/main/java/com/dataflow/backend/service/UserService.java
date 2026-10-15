@@ -5,6 +5,7 @@ import com.dataflow.backend.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import com.dataflow.backend.exception.InvalidCredentialsException;
+import com.dataflow.backend.exception.ConflictException;
 
 @Service
 public class UserService {
@@ -23,7 +24,7 @@ public class UserService {
     public User createUser(String email, String password) {
 
         if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException("Email is already registered");
+            throw new ConflictException("Email is already registered");
         }
 
         User user = new User();
