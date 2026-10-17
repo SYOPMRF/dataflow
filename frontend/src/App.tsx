@@ -136,23 +136,41 @@ function App() {
     setNotice("");
 
     try {
-      await api.uploadFile(session.token, selectedFile);
+      try {
+        await api.uploadFile(session.token, selectedFile);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          handleSessionExpired();
+        } else {
+          setNotice(
+            error instanceof Error
+              ? error.message
+              : "No fue posible cargar el archivo.",
+          );
+        }
+
+        return;
+      }
 
       setSelectedFile(null);
       setNotice("Archivo cargado correctamente.");
 
-      const updatedFiles = await api.getFiles(session.token);
-      setFiles(updatedFiles);
-      setFilesError("");
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        handleSessionExpired();
-      } else {
-        setNotice(
-          error instanceof Error
-            ? error.message
-            : "No fue posible cargar el archivo.",
-        );
+      try {
+        const updatedFiles = await api.getFiles(session.token);
+        setFiles(updatedFiles);
+        setFilesError("");
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          handleSessionExpired();
+        } else {
+          setFilesError(
+            error instanceof Error
+              ? `El archivo se cargó correctamente, pero no fue posible actualizar la lista: ${error.message}`
+              : "El archivo se cargó correctamente, pero no fue posible actualizar la lista.",
+          );
+
+          setNotice("");
+        }
       }
     } finally {
       setUploading(false);
