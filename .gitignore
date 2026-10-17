@@ -40,3 +40,4 @@ uploads/
 
 # Local test files
 backend/*.csv
+/test_data.csv

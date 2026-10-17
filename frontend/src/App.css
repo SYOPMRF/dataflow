@@ -629,6 +629,13 @@
   margin-left: 5px;
 }
 
+.file-row > .text-button {
+  justify-self: end;
+  white-space: nowrap;
+  padding: 8px 0 8px 8px;
+  font-size: 12px;
+}
+
 .files-table {
   overflow: hidden;
   border: 1px solid #e9ebf2;
@@ -639,7 +646,12 @@
 .table-header,
 .file-row {
   display: grid;
-  grid-template-columns: minmax(175px, 2fr) minmax(110px, 1.25fr) minmax(70px, .7fr) minmax(100px, 1fr) 25px;
+  grid-template-columns:
+    minmax(175px, 2fr)
+    minmax(110px, 1.25fr)
+    minmax(70px, 0.7fr)
+    minmax(100px, 1fr)
+    minmax(125px, auto);
   align-items: center;
   gap: 12px;
   padding: 0 19px;
