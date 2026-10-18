@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -181,6 +182,28 @@ class FileAnalysisHttpIntegrationTest {
                 .content(requestBody))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("Email is already registered"));
+    }
+
+    @Test
+    void ownerCanDeleteFileWithPersistedAnalysisAndRelatedRecords() throws Exception {
+        String token = jwtService.generateToken(owner.getEmail());
+        Long fileId = file.getId();
+
+        mockMvc.perform(delete("/api/files/{id}", fileId)
+                .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNoContent());
+
+        org.junit.jupiter.api.Assertions.assertFalse(
+                fileRepository.existsById(fileId));
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                analysisResultRepository.findByFileId(fileId).isEmpty());
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                fileColumnRepository.findAllByFileId(fileId).isEmpty());
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                dataQualityIssueRepository.findAllByFileId(fileId).isEmpty());
     }
 
     private User createUser(String prefix) {

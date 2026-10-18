@@ -8,4 +8,6 @@ import java.util.List;
 public interface DataQualityIssueRepository extends JpaRepository<DataQualityIssueEntity, Long> {
 
     List<DataQualityIssueEntity> findAllByFileId(Long fileId);
+
+    void deleteAllByFileId(Long fileId);
 }

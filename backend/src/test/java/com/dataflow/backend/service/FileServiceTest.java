@@ -3,95 +3,199 @@ package com.dataflow.backend.service;
 import com.dataflow.backend.entity.File;
 import com.dataflow.backend.entity.User;
 import com.dataflow.backend.enums.FileStatus;
+import com.dataflow.backend.exception.ResourceNotFoundException;
+import com.dataflow.backend.repository.AnalysisResultRepository;
+import com.dataflow.backend.repository.DataQualityIssueRepository;
+import com.dataflow.backend.repository.FileColumnRepository;
 import com.dataflow.backend.repository.FileRepository;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class FileServiceTest {
 
-    @Mock
-    private FileRepository fileRepository;
+        @Mock
+        private FileRepository fileRepository;
 
-    @Mock
-    private FileStorageService fileStorageService;
+        @Mock
+        private FileStorageService fileStorageService;
 
-    @InjectMocks
-    private FileService fileService;
+        @Mock
+        private AnalysisResultRepository analysisResultRepository;
 
-    @Test
-    void createFileShouldDeletePhysicalFileWhenDatabaseSaveFails() {
+        @Mock
+        private FileColumnRepository fileColumnRepository;
 
-        User user = new User();
-        user.setId(1L);
-        user.setEmail("test@dataflow.com");
+        @Mock
+        private DataQualityIssueRepository dataQualityIssueRepository;
 
-        RuntimeException databaseException =
-                new RuntimeException("Database error");
+        @InjectMocks
+        private FileService fileService;
 
-        when(fileRepository.save(any(File.class)))
-                .thenThrow(databaseException);
+        @Test
+        void createFileShouldDeletePhysicalFileWhenDatabaseSaveFails() {
 
-        RuntimeException exception = assertThrows(
-                RuntimeException.class,
-                () -> fileService.createFile(
-                        user,
-                        "test.csv",
-                        "stored-file.csv",
-                        "text/csv",
-                        100L
-                )
-        );
+                User user = new User();
+                user.setId(1L);
+                user.setEmail("test@dataflow.com");
 
-        verify(fileStorageService)
-                .delete("stored-file.csv");
+                RuntimeException databaseException = new RuntimeException("Database error");
 
-        verify(fileRepository)
-                .save(any(File.class));
+                when(fileRepository.save(any(File.class)))
+                                .thenThrow(databaseException);
 
-        verifyNoMoreInteractions(fileStorageService);
+                RuntimeException exception = assertThrows(
+                                RuntimeException.class,
+                                () -> fileService.createFile(
+                                                user,
+                                                "test.csv",
+                                                "stored-file.csv",
+                                                "text/csv",
+                                                100L));
 
-        assert exception == databaseException;
-    }
+                verify(fileStorageService)
+                                .delete("stored-file.csv");
 
-    @Test
-    void createFileShouldNotDeletePhysicalFileWhenDatabaseSaveSucceeds() {
+                verify(fileRepository)
+                                .save(any(File.class));
 
-        User user = new User();
-        user.setId(1L);
-        user.setEmail("test@dataflow.com");
+                verifyNoMoreInteractions(fileStorageService);
 
-        File savedFile = new File();
-        savedFile.setId(1L);
-        savedFile.setUser(user);
-        savedFile.setOriginalName("test.csv");
-        savedFile.setStoredName("stored-file.csv");
-        savedFile.setFileType("text/csv");
-        savedFile.setFileSize(100L);
-        savedFile.setStatus(FileStatus.UPLOADED);
+                assertSame(databaseException, exception);
+        }
 
-        when(fileRepository.save(any(File.class)))
-                .thenReturn(savedFile);
+        @Test
+        void createFileShouldNotDeletePhysicalFileWhenDatabaseSaveSucceeds() {
 
-        File result = fileService.createFile(
-                user,
-                "test.csv",
-                "stored-file.csv",
-                "text/csv",
-                100L
-        );
+                User user = new User();
+                user.setId(1L);
+                user.setEmail("test@dataflow.com");
 
-        verify(fileRepository)
-                .save(any(File.class));
+                File savedFile = new File();
+                savedFile.setId(1L);
+                savedFile.setUser(user);
+                savedFile.setOriginalName("test.csv");
+                savedFile.setStoredName("stored-file.csv");
+                savedFile.setFileType("text/csv");
+                savedFile.setFileSize(100L);
+                savedFile.setStatus(FileStatus.UPLOADED);
 
-        verifyNoInteractions(fileStorageService);
+                when(fileRepository.save(any(File.class)))
+                                .thenReturn(savedFile);
 
-        assert result == savedFile;
-    }
+                File result = fileService.createFile(
+                                user,
+                                "test.csv",
+                                "stored-file.csv",
+                                "text/csv",
+                                100L);
+
+                verify(fileRepository)
+                                .save(any(File.class));
+
+                verifyNoInteractions(fileStorageService);
+
+                assertSame(savedFile, result);
+        }
+
+        @Test
+        void deleteFileShouldDeleteRelatedRecordsWithoutDeletingPhysicalFileBeforeCommit() {
+                User user = new User();
+                user.setId(1L);
+                user.setEmail("test@dataflow.com");
+
+                File file = new File();
+                file.setId(8L);
+                file.setUser(user);
+                file.setStoredName("stored-file.csv");
+
+                when(fileRepository.findByIdAndUser(8L, user))
+                                .thenReturn(Optional.of(file));
+
+                try {
+                        TransactionSynchronizationManager.initSynchronization();
+
+                        fileService.deleteFile(8L, user);
+
+                        verify(dataQualityIssueRepository).deleteAllByFileId(8L);
+                        verify(fileColumnRepository).deleteAllByFileId(8L);
+                        verify(analysisResultRepository).deleteAllByFileId(8L);
+                        verify(fileRepository).delete(file);
+
+                        // El archivo físico aún no debe eliminarse.
+                        verifyNoInteractions(fileStorageService);
+
+                } finally {
+                        TransactionSynchronizationManager.clearSynchronization();
+                }
+        }
+
+        @Test
+        void deleteFileShouldDeletePhysicalFileAfterCommit() {
+                User user = new User();
+                user.setId(1L);
+                user.setEmail("test@dataflow.com");
+
+                File file = new File();
+                file.setId(8L);
+                file.setUser(user);
+                file.setStoredName("stored-file.csv");
+
+                when(fileRepository.findByIdAndUser(8L, user))
+                                .thenReturn(Optional.of(file));
+
+                try {
+                        TransactionSynchronizationManager.initSynchronization();
+
+                        fileService.deleteFile(8L, user);
+
+                        verifyNoInteractions(fileStorageService);
+
+                        TransactionSynchronization synchronization = TransactionSynchronizationManager
+                                        .getSynchronizations()
+                                        .get(0);
+
+                        synchronization.afterCommit();
+
+                        verify(fileStorageService).delete("stored-file.csv");
+                } finally {
+                        TransactionSynchronizationManager.clearSynchronization();
+                }
+        }
+
+        @Test
+        void deleteFileShouldNotDeleteAnythingWhenFileDoesNotBelongToUser() {
+                User user = new User();
+                user.setId(1L);
+                user.setEmail("test@dataflow.com");
+
+                when(fileRepository.findByIdAndUser(8L, user))
+                                .thenReturn(Optional.empty());
+
+                assertThrows(
+                                ResourceNotFoundException.class,
+                                () -> fileService.deleteFile(8L, user));
+
+                verify(fileRepository).findByIdAndUser(8L, user);
+                verifyNoInteractions(
+                                dataQualityIssueRepository,
+                                fileColumnRepository,
+                                analysisResultRepository,
+                                fileStorageService);
+
+                verify(fileRepository, never()).delete(any(File.class));
+        }
 }

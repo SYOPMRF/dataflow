@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface AnalysisResultRepository extends JpaRepository<AnalysisResultEntity, Long> {
 
     Optional<AnalysisResultEntity> findByFileId(Long fileId);
+
+    void deleteAllByFileId(Long fileId);
 }

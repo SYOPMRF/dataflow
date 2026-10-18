@@ -8,4 +8,6 @@ import java.util.List;
 public interface FileColumnRepository extends JpaRepository<FileColumn, Long> {
 
     List<FileColumn> findAllByFileId(Long fileId);
+
+    void deleteAllByFileId(Long fileId);
 }
