@@ -205,4 +205,179 @@ describe("App", () => {
       screen.getByRole("heading", { name: "Detalle por columna" }),
     ).toBeInTheDocument();
   });
+
+  it("informa si el archivo ya está siendo procesado sin iniciar otro análisis", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles).mockResolvedValue([
+      {
+        id: 10,
+        originalName: "ventas.csv",
+        storedName: "ventas.csv",
+        fileType: "text/csv",
+        fileSize: 100,
+        status: "PROCESSING",
+        createdAt: "2026-01-01T00:00:00Z",
+        processedAt: null,
+      },
+    ]);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    await waitFor(() => {
+      expect(api.getFiles).toHaveBeenCalledWith("test-token");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "En proceso..." }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Este archivo ya está siendo procesado.",
+    );
+
+    expect(api.processFile).not.toHaveBeenCalled();
+    expect(api.getAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("informa si el análisis anterior falló sin reintentarlo", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles).mockResolvedValue([
+      {
+        id: 10,
+        originalName: "ventas.csv",
+        storedName: "ventas.csv",
+        fileType: "text/csv",
+        fileSize: 100,
+        status: "FAILED",
+        createdAt: "2026-01-01T00:00:00Z",
+        processedAt: null,
+      },
+    ]);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    await waitFor(() => {
+      expect(api.getFiles).toHaveBeenCalledWith("test-token");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver error →" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "El análisis anterior falló. No se reintentará automáticamente.",
+    );
+
+    expect(api.processFile).not.toHaveBeenCalled();
+    expect(api.getAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("muestra el error del backend y restablece el estado de procesamiento", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles).mockResolvedValue([
+      {
+        id: 10,
+        originalName: "ventas.csv",
+        storedName: "ventas.csv",
+        fileType: "text/csv",
+        fileSize: 100,
+        status: "UPLOADED",
+        createdAt: "2026-01-01T00:00:00Z",
+        processedAt: null,
+      },
+    ]);
+
+    let rejectProcess!: (reason: unknown) => void;
+
+    vi.mocked(api.processFile).mockImplementation(
+      () =>
+        new Promise<Awaited<ReturnType<typeof api.processFile>>>(
+          (_, reject) => {
+            rejectProcess = reject;
+          },
+        ),
+    );
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    await waitFor(() => {
+      expect(api.getFiles).toHaveBeenCalledWith("test-token");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Analizar →" }));
+
+    expect(
+      screen.getByRole("button", { name: "Analizando..." }),
+    ).toBeDisabled();
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Analizando el archivo.",
+    );
+
+    rejectProcess(
+      new ApiError("El archivo contiene un formato no válido.", 400),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "El archivo contiene un formato no válido.",
+    );
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Analizar →" })).toBeEnabled();
+    });
+
+    expect(api.processFile).toHaveBeenCalledTimes(1);
+  });
 });
