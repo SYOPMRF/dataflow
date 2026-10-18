@@ -159,6 +159,13 @@ class FileAnalysisHttpIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void requestWithInvalidTokenIsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/files/{id}/analysis", file.getId())
+                .header("Authorization", "Bearer invalid-token")
+                .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
+    }
 
     @Test
     void registeringAnExistingEmailReturnsConflict() throws Exception {
