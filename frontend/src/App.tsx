@@ -207,8 +207,21 @@ function App() {
 
       setAnalysisResult(result);
 
-      const updatedFiles = await api.getFiles(session.token);
-      setFiles(updatedFiles);
+      try {
+        const updatedFiles = await api.getFiles(session.token);
+        setFiles(updatedFiles);
+        setFilesError("");
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          handleSessionExpired();
+        } else {
+          setAnalysisError(
+            error instanceof Error
+              ? `El análisis se completó, pero no fue posible actualizar la lista: ${error.message}`
+              : "El análisis se completó, pero no fue posible actualizar la lista.",
+          );
+        }
+      }
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         handleSessionExpired();

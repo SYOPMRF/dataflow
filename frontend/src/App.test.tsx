@@ -13,6 +13,8 @@ vi.mock("./services/api", async (importOriginal) => {
       login: vi.fn(),
       getFiles: vi.fn(),
       uploadFile: vi.fn(),
+      processFile: vi.fn(),
+      getAnalysis: vi.fn(),
     },
   };
 });
@@ -127,6 +129,80 @@ describe("App", () => {
 
     expect(
       screen.getByRole("heading", { name: "Inicia sesión" }),
+    ).toBeInTheDocument();
+  });
+
+  it("conserva los resultados si falla la actualización de archivos después del análisis", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles)
+      .mockResolvedValueOnce([
+        {
+          id: 10,
+          originalName: "ventas.csv",
+          storedName: "ventas.csv",
+          fileType: "text/csv",
+          fileSize: 100,
+          status: "UPLOADED",
+          createdAt: "2026-01-01T00:00:00Z",
+          processedAt: null,
+        },
+      ])
+      .mockRejectedValueOnce(new Error("No fue posible actualizar la lista."));
+
+    vi.mocked(api.processFile).mockResolvedValue({
+      rowCount: 4,
+      columnCount: 2,
+      missingCount: 0,
+      duplicateCount: 0,
+      columns: [],
+      qualityIssues: [],
+    });
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    await waitFor(() => {
+      expect(api.getFiles).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Analizar →" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Resultados del análisis" }),
+    ).toBeInTheDocument();
+
+    expect(
+      await screen.findByText("4", { selector: ".stat-value" }),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(api.processFile).toHaveBeenCalledWith("test-token", 10);
+      expect(api.getFiles).toHaveBeenCalledTimes(2);
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "El análisis se completó, pero no fue posible actualizar la lista",
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Detalle por columna" }),
     ).toBeInTheDocument();
   });
 });
