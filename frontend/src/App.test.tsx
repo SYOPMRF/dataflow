@@ -13,6 +13,7 @@ vi.mock("./services/api", async (importOriginal) => {
       login: vi.fn(),
       getFiles: vi.fn(),
       uploadFile: vi.fn(),
+      deleteFile: vi.fn(),
       processFile: vi.fn(),
       getAnalysis: vi.fn(),
     },
@@ -22,6 +23,7 @@ vi.mock("./services/api", async (importOriginal) => {
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
   });
 
   it("informa cuando la subida funciona pero falla la actualización de archivos", async () => {
@@ -379,5 +381,375 @@ describe("App", () => {
     });
 
     expect(api.processFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("elimina un archivo después de confirmar la acción", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles).mockResolvedValue([
+      {
+        id: 10,
+        originalName: "ventas.csv",
+        storedName: "ventas.csv",
+        fileType: "text/csv",
+        fileSize: 100,
+        status: "UPLOADED",
+        createdAt: "2026-01-01T00:00:00Z",
+        processedAt: null,
+      },
+    ]);
+
+    vi.mocked(api.deleteFile).mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    expect(await screen.findByText("ventas.csv")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+
+    await waitFor(() => {
+      expect(api.deleteFile).toHaveBeenCalledWith("test-token", 10);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("ventas.csv")).not.toBeInTheDocument();
+    });
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      '¿Seguro que quieres eliminar "ventas.csv"? Esta acción no se puede deshacer.',
+    );
+
+    expect(
+      await screen.findByText(/se eliminó correctamente/i),
+    ).toBeInTheDocument();
+  });
+  it("conserva el archivo si el usuario cancela la eliminación", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles).mockResolvedValue([
+      {
+        id: 10,
+        originalName: "ventas.csv",
+        storedName: "ventas.csv",
+        fileType: "text/csv",
+        fileSize: 100,
+        status: "UPLOADED",
+        createdAt: "2026-01-01T00:00:00Z",
+        processedAt: null,
+      },
+    ]);
+
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    expect(await screen.findByText("ventas.csv")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+
+    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(api.deleteFile).not.toHaveBeenCalled();
+    expect(screen.getByText("ventas.csv")).toBeInTheDocument();
+  });
+  it("conserva el archivo e informa del error si falla la eliminación", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles).mockResolvedValue([
+      {
+        id: 10,
+        originalName: "ventas.csv",
+        storedName: "ventas.csv",
+        fileType: "text/csv",
+        fileSize: 100,
+        status: "UPLOADED",
+        createdAt: "2026-01-01T00:00:00Z",
+        processedAt: null,
+      },
+    ]);
+
+    vi.mocked(api.deleteFile).mockRejectedValue(
+      new ApiError("Error interno del servidor", 500),
+    );
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    expect(await screen.findByText("ventas.csv")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "No fue posible eliminar el archivo: Error interno del servidor",
+    );
+
+    expect(api.deleteFile).toHaveBeenCalledWith("test-token", 10);
+    expect(screen.getByText("ventas.csv")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Eliminar" })).toBeEnabled();
+  });
+
+  it("cierra la sesión y elimina la sesión persistida", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles).mockResolvedValue([]);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    // Esperar a que la sesión esté iniciada y el dashboard cargado.
+    await waitFor(() => {
+      expect(api.getFiles).toHaveBeenCalledWith("test-token");
+      expect(sessionStorage.getItem("dataflow.session")).not.toBeNull();
+    });
+
+    // Abrir el diálogo de confirmación.
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar sesión" }));
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("heading", { name: "¿Cerrar sesión?" }),
+    ).toBeInTheDocument();
+
+    // Cancelar no debe cerrar la sesión.
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("dataflow.session")).not.toBeNull();
+
+    // Volver a abrir el diálogo y confirmar el cierre.
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar sesión" }));
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Confirmar cierre de sesión",
+      }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Inicia sesión" }),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(sessionStorage.getItem("dataflow.session")).toBeNull();
+    });
+
+    expect(api.getFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("cierra el diálogo con Escape y devuelve el foco al botón de cierre de sesión", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles).mockResolvedValue([]);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    await waitFor(() => {
+      expect(api.getFiles).toHaveBeenCalledWith("test-token");
+    });
+
+    const logoutButton = screen.getByRole("button", {
+      name: "Cerrar sesión",
+    });
+
+    fireEvent.click(logoutButton);
+
+    await screen.findByRole("dialog");
+    const cancelButton = screen.getByRole("button", { name: "Cancelar" });
+
+    expect(cancelButton).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("dataflow.session")).not.toBeNull();
+    expect(logoutButton).toHaveFocus();
+  });
+
+  it("mantiene el foco dentro del diálogo al navegar con Tab y Shift+Tab", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles).mockResolvedValue([]);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    await waitFor(() => {
+      expect(api.getFiles).toHaveBeenCalledWith("test-token");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar sesión" }));
+
+    await screen.findByRole("dialog");
+
+    const cancelButton = screen.getByRole("button", { name: "Cancelar" });
+    const confirmButton = screen.getByRole("button", {
+      name: "Confirmar cierre de sesión",
+    });
+
+    expect(cancelButton).toHaveFocus();
+
+    // Simular el foco en el último botón y comprobar que Tab vuelve al primero.
+    confirmButton.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(cancelButton).toHaveFocus();
+
+    // Simular el foco en el primer botón y comprobar que Shift+Tab vuelve al último.
+    cancelButton.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(confirmButton).toHaveFocus();
+  });
+
+  it("restaura la sesión almacenada y carga los archivos sin iniciar sesión de nuevo", async () => {
+    const storedSession = {
+      token: "restored-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    };
+
+    sessionStorage.setItem("dataflow.session", JSON.stringify(storedSession));
+    vi.mocked(api.getFiles).mockResolvedValue([]);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(api.getFiles).toHaveBeenCalledWith("restored-token");
+    });
+
+    expect(api.login).not.toHaveBeenCalled();
+    expect(await screen.findByText("test@dataflow.com")).toBeInTheDocument();
+  });
+  it("descarta una sesión almacenada corrupta y muestra el inicio de sesión", () => {
+    sessionStorage.setItem("dataflow.session", "{json-invalido");
+
+    render(<App />);
+
+    expect(
+      screen.getByRole("heading", { name: "Inicia sesión" }),
+    ).toBeInTheDocument();
+
+    expect(sessionStorage.getItem("dataflow.session")).toBeNull();
+    expect(api.getFiles).not.toHaveBeenCalled();
+  });
+  it("descarta una sesión con datos de usuario incompletos", () => {
+    sessionStorage.setItem(
+      "dataflow.session",
+      JSON.stringify({ token: "test-token", user: {} }),
+    );
+
+    render(<App />);
+
+    expect(
+      screen.getByRole("heading", { name: "Inicia sesión" }),
+    ).toBeInTheDocument();
+
+    expect(sessionStorage.getItem("dataflow.session")).toBeNull();
+    expect(api.getFiles).not.toHaveBeenCalled();
   });
 });

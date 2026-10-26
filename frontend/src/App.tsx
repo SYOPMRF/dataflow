@@ -4,6 +4,8 @@ import { ApiError, api } from "./services/api";
 import type { AnalysisResult, FileResponse, LoginResponse } from "./types/api";
 import "./App.css";
 
+const SESSION_STORAGE_KEY = "dataflow.session";
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -37,22 +39,66 @@ const navigation = [
 
 function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const logoutTriggerRef = useRef<HTMLButtonElement>(null);
+  const logoutCancelRef = useRef<HTMLButtonElement>(null);
   const [activePage, setActivePage] = useState("Resumen");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [notice, setNotice] = useState("");
+  const [noticeType, setNoticeType] = useState<"info" | "error">("info");
   const [dragging, setDragging] = useState(false);
-  const [session, setSession] = useState<LoginResponse | null>(null);
+  const [session, setSession] = useState<LoginResponse | null>(() => {
+    try {
+      const storedSession = sessionStorage.getItem(SESSION_STORAGE_KEY);
+
+      if (!storedSession) {
+        return null;
+      }
+
+      const parsedSession: unknown = JSON.parse(storedSession);
+
+      if (
+        typeof parsedSession !== "object" ||
+        parsedSession === null ||
+        !("token" in parsedSession) ||
+        typeof parsedSession.token !== "string" ||
+        parsedSession.token.trim().length === 0 ||
+        !("user" in parsedSession) ||
+        typeof parsedSession.user !== "object" ||
+        parsedSession.user === null ||
+        !("id" in parsedSession.user) ||
+        typeof parsedSession.user.id !== "number" ||
+        !Number.isFinite(parsedSession.user.id) ||
+        !("email" in parsedSession.user) ||
+        typeof parsedSession.user.email !== "string" ||
+        parsedSession.user.email.trim().length === 0 ||
+        !("createdAt" in parsedSession.user) ||
+        typeof parsedSession.user.createdAt !== "string" ||
+        parsedSession.user.createdAt.trim().length === 0
+      ) {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        return null;
+      }
+
+      return parsedSession as LoginResponse;
+    } catch {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      return null;
+    }
+  });
   const [files, setFiles] = useState<FileResponse[]>([]);
   const [filesReloadKey, setFilesReloadKey] = useState(0);
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesError, setFilesError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [processingFileId, setProcessingFileId] = useState<number | null>(null);
+  const [deletingFileId, setDeletingFileId] = useState<number | null>(null);
+  const [analysisFileId, setAnalysisFileId] = useState<number | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
     null,
   );
   const [analysisFileName, setAnalysisFileName] = useState("");
   const [analysisError, setAnalysisError] = useState("");
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   const handleSessionExpired = () => {
     setSession(null);
@@ -64,6 +110,78 @@ function App() {
     setNotice("");
     setFilesError("Tu sesión ha expirado. Inicia sesión nuevamente.");
   };
+
+  const handleLogout = () => {
+    setSession(null);
+    setFiles([]);
+    setSelectedFile(null);
+    setAnalysisFileId(null);
+    setAnalysisResult(null);
+    setAnalysisFileName("");
+    setAnalysisError("");
+    setNotice("");
+    setFilesError("");
+    setActivePage("Resumen");
+  };
+
+  useEffect(() => {
+    try {
+      if (session) {
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+      } else {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    } catch {
+      // El almacenamiento del navegador puede estar bloqueado o no disponible.
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (!showLogoutDialog) return;
+
+    const logoutTrigger = logoutTriggerRef.current;
+
+    logoutCancelRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowLogoutDialog(false);
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const dialog = document.querySelector(".logout-dialog");
+      if (!dialog) return;
+
+      const focusableElements = dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      logoutTrigger?.focus();
+    };
+  }, [showLogoutDialog]);
 
   useEffect(() => {
     if (!session) return;
@@ -113,17 +231,20 @@ function App() {
     const extension = file.name.split(".").pop()?.toLowerCase();
     if (!["csv", "xlsx"].includes(extension ?? "")) {
       setSelectedFile(null);
+      setNoticeType("error");
       setNotice("Formato no válido. Selecciona un archivo CSV o XLSX.");
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
       setSelectedFile(null);
+      setNoticeType("error");
       setNotice("El archivo supera el límite de 10 MB.");
       return;
     }
 
     setSelectedFile(file);
+    setNoticeType("info");
     setNotice("Archivo seleccionado. Está listo para subir.");
   };
 
@@ -142,6 +263,7 @@ function App() {
         if (error instanceof ApiError && error.status === 401) {
           handleSessionExpired();
         } else {
+          setNoticeType("error");
           setNotice(
             error instanceof Error
               ? error.message
@@ -153,6 +275,7 @@ function App() {
       }
 
       setSelectedFile(null);
+      setNoticeType("info");
       setNotice("Archivo cargado correctamente.");
 
       try {
@@ -183,6 +306,7 @@ function App() {
     setAnalysisError("");
     setAnalysisResult(null);
     setAnalysisFileName(file.originalName);
+    setAnalysisFileId(file.id);
     setActivePage("Resultados");
 
     if (file.status === "PROCESSING") {
@@ -234,6 +358,53 @@ function App() {
       }
     } finally {
       setProcessingFileId(null);
+    }
+  };
+
+  const deleteFile = async (file: FileResponse) => {
+    if (!session || deletingFileId !== null || processingFileId !== null) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `¿Seguro que quieres eliminar "${file.originalName}"? Esta acción no se puede deshacer.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingFileId(file.id);
+    setNotice("");
+
+    try {
+      await api.deleteFile(session.token, file.id);
+
+      setFiles((currentFiles) =>
+        currentFiles.filter((currentFile) => currentFile.id !== file.id),
+      );
+
+      if (analysisFileId === file.id) {
+        setAnalysisFileId(null);
+        setAnalysisResult(null);
+        setAnalysisFileName("");
+        setAnalysisError("");
+        setActivePage("Mis archivos");
+      }
+
+      setNoticeType("info");
+      setNotice(`"${file.originalName}" se eliminó correctamente.`);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleSessionExpired();
+      } else {
+        setNoticeType("error");
+        setNotice(
+          error instanceof Error
+            ? `No fue posible eliminar el archivo: ${error.message}`
+            : "No fue posible eliminar el archivo.",
+        );
+      }
+    } finally {
+      setDeletingFileId(null);
     }
   };
 
@@ -298,7 +469,17 @@ function App() {
               <strong>{session.user.email}</strong>
               <span>Plan gratuito</span>
             </div>
-            <span className="profile-menu">···</span>
+            <button
+              ref={logoutTriggerRef}
+              className="profile-menu"
+              type="button"
+              aria-label="Cerrar sesión"
+              title="Cerrar sesión"
+              onClick={() => setShowLogoutDialog(true)}
+            >
+              <span aria-hidden="true">↪</span>
+              <span className="profile-menu-label">Cerrar sesión</span>
+            </button>
           </div>
         </div>
       </aside>
@@ -479,8 +660,8 @@ function App() {
             )}
             {notice && (
               <p
-                className={`notice ${selectedFile ? "notice-info" : "notice-error"}`}
-                role="status"
+                className={`notice ${noticeType === "info" ? "notice-info" : "notice-error"}`}
+                role={noticeType === "error" ? "alert" : "status"}
               >
                 {notice}
               </p>
@@ -598,6 +779,22 @@ function App() {
                               : file.status === "PROCESSING"
                                 ? "En proceso..."
                                 : "Analizar →"}
+                      </button>
+
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => void deleteFile(file)}
+                        disabled={
+                          uploading ||
+                          deletingFileId !== null ||
+                          processingFileId !== null ||
+                          file.status === "PROCESSING"
+                        }
+                      >
+                        {deletingFileId === file.id
+                          ? "Eliminando..."
+                          : "Eliminar"}
                       </button>
                     </div>
                   );
@@ -762,6 +959,59 @@ function App() {
           </footer>
         </div>
       </main>
+
+      {showLogoutDialog && (
+        <div
+          className="dialog-overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowLogoutDialog(false);
+            }
+          }}
+        >
+          <section
+            className="logout-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logout-dialog-title"
+            aria-describedby="logout-dialog-description"
+          >
+            <div className="logout-dialog-icon" aria-hidden="true">
+              ↪
+            </div>
+
+            <h2 id="logout-dialog-title">¿Cerrar sesión?</h2>
+
+            <p id="logout-dialog-description">
+              Tendrás que iniciar sesión nuevamente para acceder a tus archivos
+              y análisis.
+            </p>
+
+            <div className="logout-dialog-actions">
+              <button
+                className="logout-cancel-button"
+                type="button"
+                onClick={() => setShowLogoutDialog(false)}
+                ref={logoutCancelRef}
+              >
+                Cancelar
+              </button>
+
+              <button
+                className="logout-confirm-button"
+                type="button"
+                aria-label="Confirmar cierre de sesión"
+                onClick={() => {
+                  setShowLogoutDialog(false);
+                  handleLogout();
+                }}
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

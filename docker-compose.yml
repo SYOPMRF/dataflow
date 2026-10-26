@@ -1,0 +1,84 @@
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dataflow}
+      POSTGRES_USER: ${POSTGRES_USER:-dataflow_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - dataflow
+
+  data-service:
+    build:
+      context: ./data-service
+    image: dataflow-data-service:local
+    restart: unless-stopped
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - dataflow
+
+  backend:
+    build:
+      context: ./backend
+    image: dataflow-backend:local
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-dataflow}
+      SPRING_DATASOURCE_USERNAME: ${APP_DB_USER:?Define APP_DB_USER en .env}
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD:?Define APP_DB_PASSWORD en .env}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-3600000}
+      DATA_SERVICE_BASE_URL: "http://data-service:8000"
+      FILE_STORAGE_LOCATION: /app/uploads
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      data-service:
+        condition: service_healthy
+    networks:
+      - dataflow
+
+  frontend:
+    build:
+      context: ./frontend
+    image: dataflow-frontend:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      - backend
+    networks:
+      - dataflow
+volumes:
+  postgres_data:
+  uploads_data:
+
+networks:
+  dataflow:
+    driver: bridge
