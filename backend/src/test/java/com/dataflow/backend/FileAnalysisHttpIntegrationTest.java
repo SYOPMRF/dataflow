@@ -12,6 +12,7 @@ import com.dataflow.backend.repository.FileColumnRepository;
 import com.dataflow.backend.repository.FileRepository;
 import com.dataflow.backend.repository.UserRepository;
 import com.dataflow.backend.security.JwtService;
+import com.dataflow.backend.service.DataServiceClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,10 +20,17 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -62,6 +70,12 @@ class FileAnalysisHttpIntegrationTest {
 
     @Autowired
     private DataQualityIssueRepository dataQualityIssueRepository;
+
+    @Autowired
+    private jakarta.persistence.EntityManager entityManager;
+
+    @MockitoBean
+    private DataServiceClient dataServiceClient;
 
     private User owner;
     private User otherUser;
@@ -215,6 +229,37 @@ class FileAnalysisHttpIntegrationTest {
                 .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("File not found"));
+    }
+
+    @Test
+    void processingFailureReturnsInternalServerErrorAndMarksFileAsFailed() throws Exception {
+        String token = jwtService.generateToken(owner.getEmail());
+        Long fileId = file.getId();
+
+        file.setStatus(FileStatus.UPLOADED);
+        fileRepository.saveAndFlush(file);
+
+        Path filePath = Path.of("target/test-uploads").toAbsolutePath()
+                .resolve(file.getStoredName());
+        Files.createDirectories(filePath.getParent());
+        Files.writeString(filePath, "name,age\\nAlice,25\\n");
+
+        doThrow(new RuntimeException("Simulated data service failure"))
+                .when(dataServiceClient)
+                .analyzeFile(any(byte[].class), anyString());
+
+        mockMvc.perform(post("/api/files/{id}/process", fileId)
+                .header("Authorization", "Bearer " + token)
+                .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.error").value("Failed to process file"));
+
+        fileRepository.flush();
+        entityManager.clear();
+
+        assertEquals(
+                FileStatus.FAILED,
+                fileRepository.findById(fileId).orElseThrow().getStatus());
     }
 
     private User createUser(String prefix) {
