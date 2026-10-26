@@ -206,6 +206,17 @@ class FileAnalysisHttpIntegrationTest {
                 dataQualityIssueRepository.findAllByFileId(fileId).isEmpty());
     }
 
+    @Test
+    void processingNonexistentFileReturnsNotFound() throws Exception {
+        String token = jwtService.generateToken(owner.getEmail());
+
+        mockMvc.perform(post("/api/files/{id}/process", Long.MAX_VALUE)
+                .header("Authorization", "Bearer " + token)
+                .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("File not found"));
+    }
+
     private User createUser(String prefix) {
         User user = new User();
         user.setEmail(prefix + "-" + UUID.randomUUID() + "@dataflow.test");
