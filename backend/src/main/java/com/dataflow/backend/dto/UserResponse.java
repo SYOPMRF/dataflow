@@ -1,5 +1,6 @@
 package com.dataflow.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.dataflow.backend.entity.User;
 
 import java.time.LocalDateTime;
@@ -8,6 +9,8 @@ public class UserResponse {
 
     private Long id;
     private String email;
+
+    @JsonProperty("createdAt")
     private LocalDateTime createdAt;
 
     public UserResponse(Long id, String email, LocalDateTime createdAt) {
@@ -20,8 +23,7 @@ public class UserResponse {
         return new UserResponse(
                 user.getId(),
                 user.getEmail(),
-                user.getCreatedAt()
-        );
+                user.getCreatedAt());
     }
 
     public Long getId() {

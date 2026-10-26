@@ -164,7 +164,26 @@ describe("App", () => {
       columnCount: 2,
       missingCount: 0,
       duplicateCount: 0,
-      columns: [],
+      columns: [
+        {
+          name: "edad",
+          dataType: "int64",
+          nullCount: 0,
+          uniqueCount: 3,
+          uniquePercentage: 75,
+          duplicateCount: 1,
+          duplicatedUniqueCount: 1,
+          missingPercentage: 0,
+          isCompletelyEmpty: false,
+          minValue: 20,
+          maxValue: 30,
+          meanValue: 25,
+          medianValue: 25,
+          stdDeviation: 5,
+          zeroCount: 0,
+          negativeCount: 0,
+        },
+      ],
       qualityIssues: [],
     });
 
@@ -206,6 +225,23 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { name: "Detalle por columna" }),
     ).toBeInTheDocument();
+
+    const columnSummary = screen.getByText("edad").closest("summary");
+
+    expect(columnSummary).not.toBeNull();
+
+    fireEvent.click(columnSummary!);
+
+    expect(screen.getByText("Mínimo")).toBeInTheDocument();
+    expect(screen.getByText("Máximo")).toBeInTheDocument();
+    expect(screen.getByText("Mediana")).toBeInTheDocument();
+    expect(screen.getByText("Desviación estándar")).toBeInTheDocument();
+    expect(screen.getByText("Valores cero")).toBeInTheDocument();
+    expect(screen.getByText("Valores negativos")).toBeInTheDocument();
+
+    expect(screen.getByText("20")).toBeInTheDocument();
+    expect(screen.getByText("30")).toBeInTheDocument();
+    expect(screen.getByText("5")).toBeInTheDocument();
   });
 
   it("informa si el archivo ya está siendo procesado sin iniciar otro análisis", async () => {

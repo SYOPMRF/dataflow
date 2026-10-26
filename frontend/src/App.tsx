@@ -19,6 +19,28 @@ function formatFileDate(value: string): string {
   }).format(new Date(value));
 }
 
+function formatAnalysisValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value)
+      ? value.toLocaleString("es-CO", { maximumFractionDigits: 2 })
+      : "—";
+  }
+
+  if (typeof value === "string") {
+    return value.trim() || "—";
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Sí" : "No";
+  }
+
+  return "—";
+}
+
 function getFileStatus(status: FileResponse["status"]) {
   switch (status) {
     case "COMPLETED":
@@ -880,8 +902,8 @@ function App() {
                       </div>
                     </div>
 
-                    <div className="files-table">
-                      <div className="table-header">
+                    <div className="analysis-table">
+                      <div className="analysis-table-header">
                         <span>COLUMNA</span>
                         <span>TIPO</span>
                         <span>FALTANTES</span>
@@ -890,28 +912,90 @@ function App() {
                       </div>
 
                       {analysisResult.columns.map((column) => (
-                        <div className="file-row" key={column.name}>
-                          <strong>{column.name}</strong>
-                          <span>{column.dataType}</span>
-                          <span>
-                            {column.nullCount.toLocaleString("es-CO")}
-                            {" ("}
-                            {column.missingPercentage.toLocaleString("es-CO", {
-                              maximumFractionDigits: 2,
-                            })}
-                            %)
-                          </span>
-                          <span>
-                            {column.uniqueCount.toLocaleString("es-CO")}
-                          </span>
-                          <span>
-                            {column.meanValue === null
-                              ? "—"
-                              : column.meanValue.toLocaleString("es-CO", {
+                        <details className="analysis-column" key={column.name}>
+                          <summary className="analysis-column-summary">
+                            <strong>{column.name}</strong>
+
+                            <span>{column.dataType}</span>
+
+                            <span>
+                              {column.nullCount.toLocaleString("es-CO")}
+                              {" ("}
+                              {column.missingPercentage.toLocaleString(
+                                "es-CO",
+                                {
                                   maximumFractionDigits: 2,
-                                })}
-                          </span>
-                        </div>
+                                },
+                              )}
+                              %)
+                            </span>
+
+                            <span>
+                              {column.uniqueCount.toLocaleString("es-CO")}
+                            </span>
+
+                            <span>{formatAnalysisValue(column.meanValue)}</span>
+
+                            <span className="analysis-expand-label">
+                              <span className="analysis-expand-closed">
+                                Ver estadísticas
+                              </span>
+                              <span className="analysis-expand-open">
+                                Ocultar estadísticas
+                              </span>
+                              <span
+                                aria-hidden="true"
+                                className="analysis-expand-icon"
+                              >
+                                +
+                              </span>
+                            </span>
+                          </summary>
+
+                          <div className="analysis-column-details">
+                            <div className="analysis-metric">
+                              <span>Mínimo</span>
+                              <strong>
+                                {formatAnalysisValue(column.minValue)}
+                              </strong>
+                            </div>
+
+                            <div className="analysis-metric">
+                              <span>Máximo</span>
+                              <strong>
+                                {formatAnalysisValue(column.maxValue)}
+                              </strong>
+                            </div>
+
+                            <div className="analysis-metric">
+                              <span>Mediana</span>
+                              <strong>
+                                {formatAnalysisValue(column.medianValue)}
+                              </strong>
+                            </div>
+
+                            <div className="analysis-metric">
+                              <span>Desviación estándar</span>
+                              <strong>
+                                {formatAnalysisValue(column.stdDeviation)}
+                              </strong>
+                            </div>
+
+                            <div className="analysis-metric">
+                              <span>Valores cero</span>
+                              <strong>
+                                {column.zeroCount.toLocaleString("es-CO")}
+                              </strong>
+                            </div>
+
+                            <div className="analysis-metric">
+                              <span>Valores negativos</span>
+                              <strong>
+                                {column.negativeCount.toLocaleString("es-CO")}
+                              </strong>
+                            </div>
+                          </div>
+                        </details>
                       ))}
                     </div>
                   </div>
