@@ -19,6 +19,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -169,6 +170,40 @@ class FileServiceTest {
                                         .get(0);
 
                         synchronization.afterCommit();
+
+                        verify(fileStorageService).delete("stored-file.csv");
+                } finally {
+                        TransactionSynchronizationManager.clearSynchronization();
+                }
+        }
+
+        @Test
+        void deleteFileShouldNotPropagatePhysicalDeletionFailureAfterCommit() {
+                User user = new User();
+                user.setId(1L);
+                user.setEmail("test@dataflow.com");
+
+                File file = new File();
+                file.setId(8L);
+                file.setUser(user);
+                file.setStoredName("stored-file.csv");
+
+                when(fileRepository.findByIdAndUser(8L, user))
+                                .thenReturn(Optional.of(file));
+
+                doThrow(new RuntimeException("Storage unavailable"))
+                                .when(fileStorageService)
+                                .delete("stored-file.csv");
+
+                try {
+                        TransactionSynchronizationManager.initSynchronization();
+
+                        fileService.deleteFile(8L, user);
+
+                        TransactionSynchronization synchronization = TransactionSynchronizationManager
+                                        .getSynchronizations().get(0);
+
+                        assertDoesNotThrow(synchronization::afterCommit);
 
                         verify(fileStorageService).delete("stored-file.csv");
                 } finally {
