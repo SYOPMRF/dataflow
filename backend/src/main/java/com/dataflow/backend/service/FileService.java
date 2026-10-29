@@ -8,8 +8,10 @@ import com.dataflow.backend.repository.AnalysisResultRepository;
 import com.dataflow.backend.repository.DataQualityIssueRepository;
 import com.dataflow.backend.repository.FileColumnRepository;
 import com.dataflow.backend.repository.FileRepository;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -26,18 +28,21 @@ public class FileService {
     private final AnalysisResultRepository analysisResultRepository;
     private final FileColumnRepository fileColumnRepository;
     private final DataQualityIssueRepository dataQualityIssueRepository;
+    private final PendingFileDeletionService pendingFileDeletionService;
 
     public FileService(
             FileRepository fileRepository,
             FileStorageService fileStorageService,
             AnalysisResultRepository analysisResultRepository,
             FileColumnRepository fileColumnRepository,
-            DataQualityIssueRepository dataQualityIssueRepository) {
+            DataQualityIssueRepository dataQualityIssueRepository,
+            PendingFileDeletionService pendingFileDeletionService) {
         this.fileRepository = fileRepository;
         this.fileStorageService = fileStorageService;
         this.analysisResultRepository = analysisResultRepository;
         this.fileColumnRepository = fileColumnRepository;
         this.dataQualityIssueRepository = dataQualityIssueRepository;
+        this.pendingFileDeletionService = pendingFileDeletionService;
     }
 
     public File createFile(
@@ -82,10 +87,11 @@ public class FileService {
         File file = getUserFile(fileId, user);
         String storedName = file.getStoredName();
 
+        pendingFileDeletionService.enqueue(storedName);
+
         dataQualityIssueRepository.deleteAllByFileId(fileId);
         fileColumnRepository.deleteAllByFileId(fileId);
         analysisResultRepository.deleteAllByFileId(fileId);
-
         fileRepository.delete(file);
 
         TransactionSynchronizationManager.registerSynchronization(
@@ -93,10 +99,10 @@ public class FileService {
                     @Override
                     public void afterCommit() {
                         try {
-                            fileStorageService.delete(storedName);
+                            pendingFileDeletionService.processPendingDeletions();
                         } catch (RuntimeException exception) {
                             logger.error(
-                                    "File record was deleted, but physical file cleanup failed. Stored name: {}",
+                                    "Unexpected error while processing pending file deletions after commit. Stored name: {}",
                                     storedName,
                                     exception);
                         }

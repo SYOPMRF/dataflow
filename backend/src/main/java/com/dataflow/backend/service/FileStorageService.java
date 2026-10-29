@@ -21,7 +21,7 @@ public class FileStorageService {
 
     public Path getFilePath(String storedName) {
         return storageLocation.resolve(storedName).normalize();
-    }   
+    }
 
     public FileStorageService(FileStorageProperties properties) {
         this.storageLocation = Paths.get(properties.getLocation())
@@ -33,8 +33,7 @@ public class FileStorageService {
         } catch (IOException exception) {
             throw new RuntimeException(
                     "Could not initialize file storage",
-                    exception
-            );
+                    exception);
         }
     }
 
@@ -43,8 +42,7 @@ public class FileStorageService {
         validateFile(file);
 
         String originalName = StringUtils.cleanPath(
-                file.getOriginalFilename()
-        );
+                file.getOriginalFilename());
 
         String extension = getExtension(originalName);
 
@@ -63,36 +61,33 @@ public class FileStorageService {
         } catch (IOException exception) {
             throw new RuntimeException(
                     "Could not store file",
-                    exception
-            );
+                    exception);
         }
 
         return new StoredFile(
                 originalName,
                 storedName,
                 getFileType(extension),
-                file.getSize()
-        );
+                file.getSize());
     }
 
     public void delete(String storedName) {
 
-    Path targetLocation = storageLocation
-            .resolve(storedName)
-            .normalize();
+        Path targetLocation = storageLocation
+                .resolve(storedName)
+                .normalize();
 
-    if (!targetLocation.getParent().equals(storageLocation)) {
-        throw new InvalidFileException("Invalid file path");
-    }
+        if (!targetLocation.getParent().equals(storageLocation)) {
+            throw new InvalidFileException("Invalid file path");
+        }
 
-    try {
-        Files.deleteIfExists(targetLocation);
-    } catch (IOException exception) {
-        throw new RuntimeException(
-                "Could not delete file",
-                exception
-        );
-    }
+        try {
+            Files.deleteIfExists(targetLocation);
+        } catch (IOException exception) {
+            throw new RuntimeException(
+                    "Could not delete file",
+                    exception);
+        }
     }
 
     private void validateFile(MultipartFile file) {
@@ -103,16 +98,14 @@ public class FileStorageService {
 
         if (file.getSize() > MAX_FILE_SIZE) {
             throw new InvalidFileException(
-                    "File size cannot exceed 10 MB"
-            );
+                    "File size cannot exceed 10 MB");
         }
 
         String originalName = file.getOriginalFilename();
 
         if (originalName == null || originalName.isBlank()) {
             throw new InvalidFileException(
-                    "File must have a valid name"
-            );
+                    "File must have a valid name");
         }
 
         String extension = getExtension(originalName);
@@ -121,8 +114,7 @@ public class FileStorageService {
                 !extension.equals(".xlsx")) {
 
             throw new InvalidFileException(
-                    "Only CSV and XLSX files are supported"
-            );
+                    "Only CSV and XLSX files are supported");
         }
     }
 
@@ -139,19 +131,18 @@ public class FileStorageService {
 
     private String getFileType(String extension) {
 
-    return switch (extension) {
-        case ".csv" -> "text/csv";
-        case ".xlsx" ->
+        return switch (extension) {
+            case ".csv" -> "text/csv";
+            case ".xlsx" ->
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-        default -> "application/octet-stream";
-    };
+            default -> "application/octet-stream";
+        };
     }
 
     public record StoredFile(
             String originalName,
             String storedName,
             String fileType,
-            long fileSize
-    ) {
+            long fileSize) {
     }
 }

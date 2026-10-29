@@ -43,6 +43,9 @@ class FileServiceTest {
         @Mock
         private DataQualityIssueRepository dataQualityIssueRepository;
 
+        @Mock
+        private PendingFileDeletionService pendingFileDeletionService;
+
         @InjectMocks
         private FileService fileService;
 
@@ -131,12 +134,14 @@ class FileServiceTest {
 
                         fileService.deleteFile(8L, user);
 
+                        verify(pendingFileDeletionService).enqueue("stored-file.csv");
                         verify(dataQualityIssueRepository).deleteAllByFileId(8L);
                         verify(fileColumnRepository).deleteAllByFileId(8L);
                         verify(analysisResultRepository).deleteAllByFileId(8L);
                         verify(fileRepository).delete(file);
 
-                        // El archivo físico aún no debe eliminarse.
+                        // El procesamiento debe esperar hasta después del commit.
+                        verify(pendingFileDeletionService, never()).processPendingDeletions();
                         verifyNoInteractions(fileStorageService);
 
                 } finally {
@@ -145,7 +150,7 @@ class FileServiceTest {
         }
 
         @Test
-        void deleteFileShouldDeletePhysicalFileAfterCommit() {
+        void deleteFileShouldProcessPendingDeletionsAfterCommit() {
                 User user = new User();
                 user.setId(1L);
                 user.setEmail("test@dataflow.com");
@@ -166,19 +171,21 @@ class FileServiceTest {
                         verifyNoInteractions(fileStorageService);
 
                         TransactionSynchronization synchronization = TransactionSynchronizationManager
-                                        .getSynchronizations()
-                                        .get(0);
+                                        .getSynchronizations().get(0);
 
                         synchronization.afterCommit();
 
-                        verify(fileStorageService).delete("stored-file.csv");
+                        verify(pendingFileDeletionService).enqueue("stored-file.csv");
+                        verify(pendingFileDeletionService).processPendingDeletions();
+                        verifyNoInteractions(fileStorageService);
+
                 } finally {
                         TransactionSynchronizationManager.clearSynchronization();
                 }
         }
 
         @Test
-        void deleteFileShouldNotPropagatePhysicalDeletionFailureAfterCommit() {
+        void deleteFileShouldNotPropagateProcessingFailureAfterCommit() {
                 User user = new User();
                 user.setId(1L);
                 user.setEmail("test@dataflow.com");
@@ -192,8 +199,8 @@ class FileServiceTest {
                                 .thenReturn(Optional.of(file));
 
                 doThrow(new RuntimeException("Storage unavailable"))
-                                .when(fileStorageService)
-                                .delete("stored-file.csv");
+                                .when(pendingFileDeletionService)
+                                .processPendingDeletions();
 
                 try {
                         TransactionSynchronizationManager.initSynchronization();
@@ -205,7 +212,10 @@ class FileServiceTest {
 
                         assertDoesNotThrow(synchronization::afterCommit);
 
-                        verify(fileStorageService).delete("stored-file.csv");
+                        verify(pendingFileDeletionService).enqueue("stored-file.csv");
+                        verify(pendingFileDeletionService).processPendingDeletions();
+                        verifyNoInteractions(fileStorageService);
+
                 } finally {
                         TransactionSynchronizationManager.clearSynchronization();
                 }
@@ -229,7 +239,8 @@ class FileServiceTest {
                                 dataQualityIssueRepository,
                                 fileColumnRepository,
                                 analysisResultRepository,
-                                fileStorageService);
+                                fileStorageService,
+                                pendingFileDeletionService);
 
                 verify(fileRepository, never()).delete(any(File.class));
         }
