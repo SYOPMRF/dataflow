@@ -18,6 +18,25 @@ services:
     networks:
       - dataflow
 
+  migrate:
+    image: dataflow-backend:local
+    restart: "no"
+    entrypoint: ["java"]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-dataflow}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-dataflow_app}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+    command:
+      - -Dloader.main=com.dataflow.backend.migration.DatabaseMigrationRunner
+      - -cp
+      - /app/app.jar
+      - org.springframework.boot.loader.launch.PropertiesLauncher
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - dataflow
+
   data-service:
     build:
       context: ./data-service
@@ -48,6 +67,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${APP_DB_USER:?Define APP_DB_USER en .env}
       SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD:?Define APP_DB_PASSWORD en .env}
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_FLYWAY_ENABLED: "false"
       JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-3600000}
       DATA_SERVICE_BASE_URL: "http://data-service:8000"
@@ -61,6 +81,8 @@ services:
         condition: service_healthy
       data-service:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - dataflow
 
