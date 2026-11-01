@@ -1,0 +1,2 @@
+ALTER TABLE files
+ADD COLUMN processing_started_at TIMESTAMP(6) WITHOUT TIME ZONE;

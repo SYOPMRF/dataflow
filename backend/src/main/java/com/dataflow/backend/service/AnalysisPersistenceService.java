@@ -27,8 +27,7 @@ public class AnalysisPersistenceService {
             FileRepository fileRepository,
             AnalysisResultRepository analysisResultRepository,
             FileColumnRepository fileColumnRepository,
-            DataQualityIssueRepository dataQualityIssueRepository
-    ) {
+            DataQualityIssueRepository dataQualityIssueRepository) {
         this.fileRepository = fileRepository;
         this.analysisResultRepository = analysisResultRepository;
         this.fileColumnRepository = fileColumnRepository;
@@ -63,11 +62,9 @@ public class AnalysisPersistenceService {
             columnEntity.setMissingPercentage(column.missingPercentage());
             columnEntity.setCompletelyEmpty(column.isCompletelyEmpty());
             columnEntity.setMinValue(
-                    column.minValue() != null ? column.minValue().toString() : null
-            );
+                    column.minValue() != null ? column.minValue().toString() : null);
             columnEntity.setMaxValue(
-                    column.maxValue() != null ? column.maxValue().toString() : null
-            );
+                    column.maxValue() != null ? column.maxValue().toString() : null);
             columnEntity.setMeanValue(column.meanValue());
             columnEntity.setMedianValue(column.medianValue());
             columnEntity.setStdDeviation(column.stdDeviation());
@@ -91,6 +88,7 @@ public class AnalysisPersistenceService {
 
         file.setStatus(com.dataflow.backend.enums.FileStatus.COMPLETED);
         file.setProcessedAt(LocalDateTime.now());
+        file.setProcessingStartedAt(null);
         fileRepository.save(file);
     }
 }

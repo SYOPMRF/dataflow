@@ -45,6 +45,9 @@ public class File {
     @Column(name = "processed_at")
     private LocalDateTime processedAt;
 
+    @Column(name = "processing_started_at")
+    private LocalDateTime processingStartedAt;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
