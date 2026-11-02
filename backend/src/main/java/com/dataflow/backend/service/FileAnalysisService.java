@@ -16,6 +16,8 @@ import com.dataflow.backend.repository.DataQualityIssueRepository;
 import com.dataflow.backend.repository.FileColumnRepository;
 import com.dataflow.backend.repository.FileRepository;
 import com.dataflow.backend.repository.UserRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,10 @@ public class FileAnalysisService {
         private final DataQualityIssueRepository dataQualityIssueRepository;
         private final AnalysisPersistenceService analysisPersistenceService;
 
+        private static final String VALUE_FORMAT_PREFIX = "DFJSON1:";
+
+        private final ObjectMapper objectMapper;
+
         public FileAnalysisService(
                         FileRepository fileRepository,
                         UserRepository userRepository,
@@ -44,7 +50,9 @@ public class FileAnalysisService {
                         DataServiceClient dataServiceClient,
                         FileStorageService fileStorageService,
                         DataQualityIssueRepository dataQualityIssueRepository,
-                        AnalysisPersistenceService analysisPersistenceService) {
+                        AnalysisPersistenceService analysisPersistenceService,
+                        ObjectMapper objectMapper) {
+
                 this.fileRepository = fileRepository;
                 this.userRepository = userRepository;
                 this.analysisResultRepository = analysisResultRepository;
@@ -53,6 +61,27 @@ public class FileAnalysisService {
                 this.fileStorageService = fileStorageService;
                 this.dataQualityIssueRepository = dataQualityIssueRepository;
                 this.analysisPersistenceService = analysisPersistenceService;
+                this.objectMapper = objectMapper;
+        }
+
+        private Object deserializeValue(String value) {
+                if (value == null) {
+                        return null;
+                }
+
+                if (!value.startsWith(VALUE_FORMAT_PREFIX)) {
+                        return value;
+                }
+
+                String jsonValue = value.substring(VALUE_FORMAT_PREFIX.length());
+
+                try {
+                        return objectMapper.readValue(jsonValue, Object.class);
+                } catch (JsonProcessingException exception) {
+                        throw new IllegalStateException(
+                                        "Failed to deserialize column analysis value",
+                                        exception);
+                }
         }
 
         public AnalysisResult analyzeFile(Long fileId) throws IOException {
@@ -131,8 +160,8 @@ public class FileAnalysisService {
                                                 column.getDuplicatedUniqueCount(),
                                                 column.getMissingPercentage(),
                                                 column.isCompletelyEmpty(),
-                                                column.getMinValue(),
-                                                column.getMaxValue(),
+                                                deserializeValue(column.getMinValue()),
+                                                deserializeValue(column.getMaxValue()),
                                                 column.getMeanValue(),
                                                 column.getMedianValue(),
                                                 column.getStdDeviation(),

@@ -10,6 +10,8 @@ import com.dataflow.backend.repository.DataQualityIssueRepository;
 import com.dataflow.backend.repository.FileColumnRepository;
 import com.dataflow.backend.repository.FileRepository;
 import com.dataflow.backend.exception.ResourceNotFoundException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,20 +20,40 @@ import java.time.LocalDateTime;
 @Service
 public class AnalysisPersistenceService {
 
+    private static final String VALUE_FORMAT_PREFIX = "DFJSON1:";
+
     private final FileRepository fileRepository;
     private final AnalysisResultRepository analysisResultRepository;
     private final FileColumnRepository fileColumnRepository;
     private final DataQualityIssueRepository dataQualityIssueRepository;
+    private final ObjectMapper objectMapper;
 
     public AnalysisPersistenceService(
             FileRepository fileRepository,
             AnalysisResultRepository analysisResultRepository,
             FileColumnRepository fileColumnRepository,
-            DataQualityIssueRepository dataQualityIssueRepository) {
+            DataQualityIssueRepository dataQualityIssueRepository,
+            ObjectMapper objectMapper) {
+
         this.fileRepository = fileRepository;
         this.analysisResultRepository = analysisResultRepository;
         this.fileColumnRepository = fileColumnRepository;
         this.dataQualityIssueRepository = dataQualityIssueRepository;
+        this.objectMapper = objectMapper;
+    }
+
+    private String serializeValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+
+        try {
+            return VALUE_FORMAT_PREFIX + objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException(
+                    "Failed to serialize column analysis value",
+                    exception);
+        }
     }
 
     @Transactional
@@ -61,10 +83,8 @@ public class AnalysisPersistenceService {
             columnEntity.setDuplicatedUniqueCount(column.duplicatedUniqueCount());
             columnEntity.setMissingPercentage(column.missingPercentage());
             columnEntity.setCompletelyEmpty(column.isCompletelyEmpty());
-            columnEntity.setMinValue(
-                    column.minValue() != null ? column.minValue().toString() : null);
-            columnEntity.setMaxValue(
-                    column.maxValue() != null ? column.maxValue().toString() : null);
+            columnEntity.setMinValue(serializeValue(column.minValue()));
+            columnEntity.setMaxValue(serializeValue(column.maxValue()));
             columnEntity.setMeanValue(column.meanValue());
             columnEntity.setMedianValue(column.medianValue());
             columnEntity.setStdDeviation(column.stdDeviation());

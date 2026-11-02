@@ -16,6 +16,8 @@ import com.dataflow.backend.repository.DataQualityIssueRepository;
 import com.dataflow.backend.repository.FileColumnRepository;
 import com.dataflow.backend.repository.FileRepository;
 import com.dataflow.backend.repository.UserRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.mockito.Spy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -64,6 +66,9 @@ class FileAnalysisServiceTest {
 
         @Mock
         private AnalysisPersistenceService analysisPersistenceService;
+
+        @Spy
+        private ObjectMapper objectMapper = new ObjectMapper();
 
         @InjectMocks
         private FileAnalysisService fileAnalysisService;
@@ -419,6 +424,57 @@ class FileAnalysisServiceTest {
                 assertEquals(0, resultColumn.negativeCount());
 
                 assertEquals(0, result.qualityIssues().size());
+        }
+
+        @Test
+        void getAnalysisShouldDeserializeTypedMinAndMaxValues() {
+                User user = new User();
+                user.setId(1L);
+                user.setEmail("test@dataflow.com");
+
+                File file = new File();
+                file.setId(1L);
+                file.setUser(user);
+                file.setStatus(FileStatus.COMPLETED);
+
+                AnalysisResultEntity analysisEntity = new AnalysisResultEntity();
+                analysisEntity.setFile(file);
+                analysisEntity.setRowCount(10);
+                analysisEntity.setColumnCount(1);
+                analysisEntity.setMissingCount(0);
+                analysisEntity.setDuplicateCount(0);
+
+                FileColumn column = new FileColumn();
+                column.setFile(file);
+                column.setName("age");
+                column.setDataType("integer");
+                column.setMinValue("DFJSON1:18");
+                column.setMaxValue("DFJSON1:65");
+
+                when(userRepository.findByEmail("test@dataflow.com"))
+                                .thenReturn(Optional.of(user));
+                when(fileRepository.findByIdAndUser(1L, user))
+                                .thenReturn(Optional.of(file));
+                when(analysisResultRepository.findByFileId(1L))
+                                .thenReturn(Optional.of(analysisEntity));
+                when(fileColumnRepository.findAllByFileId(1L))
+                                .thenReturn(List.of(column));
+                when(dataQualityIssueRepository.findAllByFileId(1L))
+                                .thenReturn(List.of());
+
+                SecurityContextHolder.getContext().setAuthentication(
+                                new UsernamePasswordAuthenticationToken(
+                                                "test@dataflow.com",
+                                                null));
+
+                AnalysisResult result = fileAnalysisService.getAnalysis(1L);
+
+                ColumnAnalysis resultColumn = result.columns().get(0);
+
+                assertEquals(18, resultColumn.minValue());
+                assertEquals(65, resultColumn.maxValue());
+                assertEquals(Integer.class, resultColumn.minValue().getClass());
+                assertEquals(Integer.class, resultColumn.maxValue().getClass());
         }
 
         @Test
