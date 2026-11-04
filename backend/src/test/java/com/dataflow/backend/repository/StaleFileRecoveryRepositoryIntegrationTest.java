@@ -71,7 +71,7 @@ class StaleFileRecoveryRepositoryIntegrationTest {
         File persistedRecentFile = fileRepository.findById(recentFile.getId()).orElseThrow();
         assertEquals(FileStatus.PROCESSING, persistedRecentFile.getStatus());
         assertEquals(
-                recentFile.getProcessingStartedAt().truncatedTo(ChronoUnit.MICROS),
+                recentFile.getProcessingStartedAt(),
                 persistedRecentFile.getProcessingStartedAt());
 
         File persistedFileWithoutStartTime = fileRepository.findById(fileWithoutStartTime.getId()).orElseThrow();
@@ -96,7 +96,10 @@ class StaleFileRecoveryRepositoryIntegrationTest {
         file.setFileType("text/csv");
         file.setFileSize(100L);
         file.setStatus(status);
-        file.setProcessingStartedAt(processingStartedAt);
+        file.setProcessingStartedAt(
+                processingStartedAt == null
+                        ? null
+                        : processingStartedAt.truncatedTo(ChronoUnit.MICROS));
 
         return fileRepository.saveAndFlush(file);
     }
