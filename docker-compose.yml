@@ -26,6 +26,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-dataflow}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-dataflow_app}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+      APP_DB_USER: ${APP_DB_USER:?Define APP_DB_USER en .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Define APP_DB_PASSWORD en .env}
     command:
       - -Dloader.main=com.dataflow.backend.migration.DatabaseMigrationRunner
       - -cp
