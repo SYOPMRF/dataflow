@@ -6,6 +6,7 @@ import com.dataflow.backend.enums.FileStatus;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,7 +71,7 @@ class StaleFileRecoveryRepositoryIntegrationTest {
         File persistedRecentFile = fileRepository.findById(recentFile.getId()).orElseThrow();
         assertEquals(FileStatus.PROCESSING, persistedRecentFile.getStatus());
         assertEquals(
-                recentFile.getProcessingStartedAt(),
+                recentFile.getProcessingStartedAt().truncatedTo(ChronoUnit.MICROS),
                 persistedRecentFile.getProcessingStartedAt());
 
         File persistedFileWithoutStartTime = fileRepository.findById(fileWithoutStartTime.getId()).orElseThrow();
