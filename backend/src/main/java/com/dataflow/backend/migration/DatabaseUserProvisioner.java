@@ -13,6 +13,8 @@ public final class DatabaseUserProvisioner {
 
     private static final Pattern VALID_IDENTIFIER = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]{0,62}");
 
+    private static final String PENDING_DELETION_SEQUENCE = "pending_file_deletions_id_seq";
+
     private final String runtimeUsername;
     private final String runtimePassword;
 
@@ -31,6 +33,7 @@ public final class DatabaseUserProvisioner {
     }
 
     public void provisionRole(Connection connection) throws SQLException {
+
         String currentUser = getCurrentUser(connection);
 
         if (currentUser.equals(runtimeUsername)) {
@@ -41,6 +44,39 @@ public final class DatabaseUserProvisioner {
         createRoleIfMissing(connection);
         revokeRoleMemberships(connection);
         configureRole(connection);
+    }
+
+    public void grantRuntimePrivileges(Connection connection)
+            throws SQLException {
+
+        grantDatabasePermissions(connection);
+        grantSchemaPermissions(connection);
+        grantTablePermissions(connection);
+        grantSequencePermissions(connection);
+        configureDefaultPrivileges(connection);
+    }
+
+    private void createRoleIfMissing(Connection connection)
+            throws SQLException {
+
+        boolean roleExists;
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT 1 FROM pg_roles WHERE rolname = ?")) {
+
+            statement.setString(1, runtimeUsername);
+
+            try (ResultSet result = statement.executeQuery()) {
+                roleExists = result.next();
+            }
+        }
+
+        if (!roleExists) {
+            executeFormattedSql(
+                    connection,
+                    "SELECT format('CREATE ROLE %I LOGIN', ?)",
+                    runtimeUsername);
+        }
     }
 
     private void revokeRoleMemberships(Connection connection)
@@ -78,38 +114,6 @@ public final class DatabaseUserProvisioner {
         }
     }
 
-    public void grantRuntimePrivileges(Connection connection)
-            throws SQLException {
-
-        grantDatabasePermissions(connection);
-        grantSchemaPermissions(connection);
-        grantTablePermissions(connection);
-        configureDefaultPrivileges(connection);
-    }
-
-    private void createRoleIfMissing(Connection connection)
-            throws SQLException {
-
-        boolean roleExists;
-
-        try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT 1 FROM pg_roles WHERE rolname = ?")) {
-
-            statement.setString(1, runtimeUsername);
-
-            try (ResultSet result = statement.executeQuery()) {
-                roleExists = result.next();
-            }
-        }
-
-        if (!roleExists) {
-            executeFormattedSql(
-                    connection,
-                    "SELECT format('CREATE ROLE %I LOGIN', ?)",
-                    runtimeUsername);
-        }
-    }
-
     private void configureRole(Connection connection)
             throws SQLException {
 
@@ -133,6 +137,16 @@ public final class DatabaseUserProvisioner {
                 connection,
                 """
                         SELECT format(
+                            'REVOKE ALL PRIVILEGES ON DATABASE %I FROM %I',
+                            current_database(), ?
+                        )
+                        """,
+                runtimeUsername);
+
+        executeFormattedSql(
+                connection,
+                """
+                        SELECT format(
                             'GRANT CONNECT ON DATABASE %I TO %I',
                             current_database(), ?
                         )
@@ -142,6 +156,16 @@ public final class DatabaseUserProvisioner {
 
     private void grantSchemaPermissions(Connection connection)
             throws SQLException {
+
+        executeFormattedSql(
+                connection,
+                """
+                        SELECT format(
+                            'REVOKE ALL PRIVILEGES ON SCHEMA public FROM %I',
+                            ?
+                        )
+                        """,
+                runtimeUsername);
 
         executeFormattedSql(
                 connection,
@@ -157,19 +181,29 @@ public final class DatabaseUserProvisioner {
     private void grantTablePermissions(Connection connection)
             throws SQLException {
 
-        List<String> grantStatements = new ArrayList<>();
-
-        try (PreparedStatement statement = connection.prepareStatement(
+        executeFormattedSql(
+                connection,
                 """
                         SELECT format(
-                            'GRANT SELECT, INSERT, UPDATE, DELETE '
-                            || 'ON TABLE %I.%I TO %I',
-                            schemaname, tablename, ?
+                            'REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public '
+                            || 'FROM %I',
+                            ?
                         )
-                        FROM pg_tables
-                        WHERE schemaname = 'public'
-                          AND tablename <> 'flyway_schema_history'
-                        """)) {
+                        """,
+                runtimeUsername);
+
+        List<String> grantStatements = new ArrayList<>();
+
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT format(
+                    'GRANT SELECT, INSERT, UPDATE, DELETE '
+                    || 'ON TABLE %I.%I TO %I',
+                    schemaname, tablename, ?
+                )
+                FROM pg_tables
+                WHERE schemaname = 'public'
+                  AND tablename <> 'flyway_schema_history'
+                """)) {
 
             statement.setString(1, runtimeUsername);
 
@@ -187,15 +221,106 @@ public final class DatabaseUserProvisioner {
         }
     }
 
-    private void configureDefaultPrivileges(Connection connection)
+    private void grantSequencePermissions(Connection connection)
             throws SQLException {
 
         executeFormattedSql(
                 connection,
                 """
                         SELECT format(
+                            'REVOKE ALL PRIVILEGES ON ALL SEQUENCES '
+                            || 'IN SCHEMA public FROM %I',
+                            ?
+                        )
+                        """,
+                runtimeUsername);
+
+        boolean pendingDeletionSequenceExists;
+
+        try (Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery("""
+                        SELECT to_regclass(
+                            'public.pending_file_deletions_id_seq'
+                        ) IS NOT NULL
+                        """)) {
+
+            result.next();
+            pendingDeletionSequenceExists = result.getBoolean(1);
+        }
+
+        if (pendingDeletionSequenceExists) {
+            executeFormattedSql(
+                    connection,
+                    """
+                            SELECT format(
+                                'GRANT USAGE ON SEQUENCE %I.%I TO %I',
+                                'public',
+                                ?,
+                                ?
+                            )
+                            """,
+                    PENDING_DELETION_SEQUENCE,
+                    runtimeUsername);
+        }
+    }
+
+    private void configureDefaultPrivileges(Connection connection)
+            throws SQLException {
+
+        // Revocar privilegios predeterminados globales.
+        executeFormattedSql(
+                connection,
+                """
+                        SELECT format(
+                            'ALTER DEFAULT PRIVILEGES FOR ROLE %I '
+                            || 'REVOKE ALL ON TABLES FROM %I',
+                            current_user, ?
+                        )
+                        """,
+                runtimeUsername);
+
+        executeFormattedSql(
+                connection,
+                """
+                        SELECT format(
+                            'ALTER DEFAULT PRIVILEGES FOR ROLE %I '
+                            || 'REVOKE ALL ON SEQUENCES FROM %I',
+                            current_user, ?
+                        )
+                        """,
+                runtimeUsername);
+
+        // Revocar privilegios predeterminados específicos de public.
+        executeFormattedSql(
+                connection,
+                """
+                        SELECT format(
                             'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I '
-                            || 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I',
+                            || 'REVOKE ALL ON TABLES FROM %I',
+                            current_user, 'public', ?
+                        )
+                        """,
+                runtimeUsername);
+
+        executeFormattedSql(
+                connection,
+                """
+                        SELECT format(
+                            'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I '
+                            || 'REVOKE ALL ON SEQUENCES FROM %I',
+                            current_user, 'public', ?
+                        )
+                        """,
+                runtimeUsername);
+
+        // Conceder CRUD predeterminado únicamente en public.
+        executeFormattedSql(
+                connection,
+                """
+                        SELECT format(
+                            'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I '
+                            || 'GRANT SELECT, INSERT, UPDATE, DELETE '
+                            || 'ON TABLES TO %I',
                             current_user, 'public', ?
                         )
                         """,

@@ -19,6 +19,58 @@ class DatabaseUserProvisionerIntegrationTest {
     private static final String ADMIN_USER = "poysmon";
     private static final String ADMIN_PASSWORD = "";
 
+    private boolean sequenceExists(
+            Connection connection,
+            String sequenceName) throws Exception {
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT to_regclass(?) IS NOT NULL")) {
+            statement.setString(1, sequenceName);
+
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                return result.getBoolean(1);
+            }
+        }
+    }
+
+    private void assertDefaultPrivileges(
+            Connection connection,
+            String owner,
+            String grantee,
+            String objectType,
+            boolean expected) throws Exception {
+
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_default_acl d
+                    CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+                    WHERE d.defaclrole = (
+                        SELECT oid FROM pg_roles WHERE rolname = ?
+                    )
+                      AND d.defaclnamespace = 0
+                      AND d.defaclobjtype = ?
+                      AND acl.grantee = (
+                          SELECT oid FROM pg_roles WHERE rolname = ?
+                      )
+                )
+                """)) {
+
+            statement.setString(1, owner);
+            statement.setString(2, objectType);
+            statement.setString(3, grantee);
+
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertTrue(
+                        result.getBoolean(1) == expected,
+                        "Unexpected global default privileges for "
+                                + grantee + " on object type " + objectType);
+            }
+        }
+    }
+
     @Test
     void shouldProvisionRestrictedRuntimeUserAndGrantExpectedPrivileges()
             throws Exception {
@@ -39,7 +91,9 @@ class DatabaseUserProvisionerIntegrationTest {
                 historyTableCreated = createHistoryTableIfMissing(
                         adminConnection);
 
-                createApplicationTable(
+                createApplicationTable(adminConnection, applicationTable);
+
+                String applicationSequence = getIdentitySequence(
                         adminConnection, applicationTable);
 
                 DatabaseUserProvisioner provisioner = new DatabaseUserProvisioner(
@@ -52,11 +106,9 @@ class DatabaseUserProvisionerIntegrationTest {
 
                 provisioner.grantRuntimePrivileges(adminConnection);
 
-                // Simular una membresía que no debe conservar el usuario runtime.
+                // Comprobar la membresía de roles.
                 executeIdentifierStatement(
-                        adminConnection,
-                        "CREATE ROLE %s",
-                        groupUsername);
+                        adminConnection, "CREATE ROLE %s", groupUsername);
 
                 executeIdentifierStatement(
                         adminConnection,
@@ -65,51 +117,129 @@ class DatabaseUserProvisionerIntegrationTest {
                         runtimeUsername);
 
                 assertRoleMembershipExists(
-                        adminConnection,
-                        groupUsername,
-                        runtimeUsername);
+                        adminConnection, groupUsername, runtimeUsername);
+
+                // Comprobar privilegios de las tablas actuales y futuras.
+                assertTablePrivileges(
+                        adminConnection, runtimeUsername,
+                        applicationTable, true);
 
                 assertTablePrivileges(
-                        adminConnection,
-                        runtimeUsername,
-                        applicationTable,
-                        true);
-
-                assertTablePrivileges(
-                        adminConnection,
-                        runtimeUsername,
-                        "flyway_schema_history",
-                        false);
+                        adminConnection, runtimeUsername,
+                        "flyway_schema_history", false);
 
                 createFutureTable(adminConnection, futureTable);
 
                 assertTablePrivileges(
+                        adminConnection, runtimeUsername,
+                        futureTable, true);
+
+                verifyRuntimeCanInsert(
+                        runtimeUsername, runtimePassword, applicationTable);
+
+                verifyRuntimeCanInsert(
+                        runtimeUsername, runtimePassword, futureTable);
+
+                // Simular privilegios predeterminados globales excesivos.
+                executeIdentifierStatement(
                         adminConnection,
-                        runtimeUsername,
-                        futureTable,
-                        true);
+                        """
+                                ALTER DEFAULT PRIVILEGES FOR ROLE %s
+                                GRANT ALL PRIVILEGES ON TABLES TO %s
+                                """,
+                        ADMIN_USER,
+                        runtimeUsername);
 
-                verifyRuntimeCanInsert(
-                        runtimeUsername,
-                        runtimePassword,
-                        applicationTable);
+                executeIdentifierStatement(
+                        adminConnection,
+                        """
+                                ALTER DEFAULT PRIVILEGES FOR ROLE %s
+                                GRANT ALL PRIVILEGES ON SEQUENCES TO %s
+                                """,
+                        ADMIN_USER,
+                        runtimeUsername);
 
-                verifyRuntimeCanInsert(
-                        runtimeUsername,
-                        runtimePassword,
-                        futureTable);
+                // Simular privilegios excesivos concedidos previamente.
+                executeIdentifierStatement(
+                        adminConnection,
+                        "GRANT CREATE ON DATABASE dataflow_test TO %s",
+                        runtimeUsername);
 
-                // Comprobar que el provisionamiento puede repetirse.
+                executeIdentifierStatement(
+                        adminConnection,
+                        "GRANT CREATE ON SCHEMA public TO %s",
+                        runtimeUsername);
+
+                executeIdentifierStatement(
+                        adminConnection,
+                        "GRANT ALL PRIVILEGES ON TABLE public.%s TO %s",
+                        "flyway_schema_history",
+                        runtimeUsername);
+
+                executeIdentifierStatement(
+                        adminConnection,
+                        "GRANT ALL PRIVILEGES ON SEQUENCE public.%s TO %s",
+                        applicationSequence.substring(
+                                applicationSequence.indexOf('.') + 1),
+                        runtimeUsername);
+
+                // Reprovisionar con otra contraseña y eliminar excesos.
                 DatabaseUserProvisioner updatedProvisioner = new DatabaseUserProvisioner(
                         runtimeUsername,
                         runtimePassword + "-updated");
 
                 updatedProvisioner.provisionRole(adminConnection);
+                updatedProvisioner.grantRuntimePrivileges(adminConnection);
+
+                assertDefaultPrivileges(
+                        adminConnection,
+                        ADMIN_USER,
+                        runtimeUsername,
+                        "r",
+                        false);
+
+                assertDefaultPrivileges(
+                        adminConnection,
+                        ADMIN_USER,
+                        runtimeUsername,
+                        "S",
+                        false);
 
                 assertRoleMembershipDoesNotExist(
+                        adminConnection, groupUsername, runtimeUsername);
+
+                assertDatabasePrivilege(
+                        adminConnection, runtimeUsername, "CREATE", false);
+
+                assertSchemaPrivilege(
+                        adminConnection, runtimeUsername, "CREATE", false);
+
+                assertTablePrivileges(
+                        adminConnection, runtimeUsername,
+                        "flyway_schema_history", false);
+
+                assertTablePrivileges(
+                        adminConnection, runtimeUsername,
+                        applicationTable, true);
+
+                assertSequencePrivilege(
+                        adminConnection, runtimeUsername,
+                        applicationSequence, false);
+
+                if (sequenceExists(
                         adminConnection,
-                        groupUsername,
-                        runtimeUsername);
+                        "public.pending_file_deletions_id_seq")) {
+                    assertSequencePrivilege(
+                            adminConnection,
+                            runtimeUsername,
+                            "public.pending_file_deletions_id_seq",
+                            true);
+                }
+
+                verifyRuntimeCanInsert(
+                        runtimeUsername,
+                        runtimePassword + "-updated",
+                        applicationTable);
 
                 verifyRuntimeCanConnect(
                         runtimeUsername,
@@ -240,10 +370,91 @@ class DatabaseUserProvisionerIntegrationTest {
                 PreparedStatement statement = runtimeConnection.prepareStatement(
                         "INSERT INTO public."
                                 + tableName
-                                + " (value) VALUES (?)")) {
+                                + " (value) VALUES (?) RETURNING id")) {
 
             statement.setString(1, "integration-test");
-            statement.executeUpdate();
+
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertTrue(result.getLong("id") > 0);
+            }
+        }
+    }
+
+    private String getIdentitySequence(
+            Connection connection,
+            String tableName) throws Exception {
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT pg_get_serial_sequence(?, 'id')")) {
+
+            statement.setString(1, "public." + tableName);
+
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+
+                String sequence = result.getString(1);
+                assertTrue(sequence != null);
+
+                return sequence;
+            }
+        }
+    }
+
+    private void assertDatabasePrivilege(
+            Connection connection,
+            String username,
+            String privilege,
+            boolean expected) throws Exception {
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT has_database_privilege(?, current_database(), ?)")) {
+
+            statement.setString(1, username);
+            statement.setString(2, privilege);
+
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertTrue(result.getBoolean(1) == expected);
+            }
+        }
+    }
+
+    private void assertSchemaPrivilege(
+            Connection connection,
+            String username,
+            String privilege,
+            boolean expected) throws Exception {
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT has_schema_privilege(?, 'public', ?)")) {
+
+            statement.setString(1, username);
+            statement.setString(2, privilege);
+
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertTrue(result.getBoolean(1) == expected);
+            }
+        }
+    }
+
+    private void assertSequencePrivilege(
+            Connection connection,
+            String username,
+            String sequence,
+            boolean expected) throws Exception {
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT has_sequence_privilege(?, ?, 'USAGE')")) {
+
+            statement.setString(1, username);
+            statement.setString(2, sequence);
+
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertTrue(result.getBoolean(1) == expected);
+            }
         }
     }
 
@@ -264,6 +475,46 @@ class DatabaseUserProvisionerIntegrationTest {
             String applicationTable,
             String futureTable,
             boolean historyTableCreated) throws Exception {
+
+        String revokeGlobalTableDefaults = """
+                SELECT format(
+                    'ALTER DEFAULT PRIVILEGES FOR ROLE %I '
+                    || 'REVOKE ALL ON TABLES FROM %I',
+                    current_user, ?
+                )
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(revokeGlobalTableDefaults)) {
+            statement.setString(1, username);
+
+            try (ResultSet result = statement.executeQuery()) {
+                if (result.next()) {
+                    try (Statement execute = connection.createStatement()) {
+                        execute.execute(result.getString(1));
+                    }
+                }
+            }
+        }
+
+        String revokeGlobalSequenceDefaults = """
+                SELECT format(
+                    'ALTER DEFAULT PRIVILEGES FOR ROLE %I '
+                    || 'REVOKE ALL ON SEQUENCES FROM %I',
+                    current_user, ?
+                )
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(revokeGlobalSequenceDefaults)) {
+            statement.setString(1, username);
+
+            try (ResultSet result = statement.executeQuery()) {
+                if (result.next()) {
+                    try (Statement execute = connection.createStatement()) {
+                        execute.execute(result.getString(1));
+                    }
+                }
+            }
+        }
 
         String revokeDefaults = """
                 SELECT format(
