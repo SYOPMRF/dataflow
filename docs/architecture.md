@@ -300,22 +300,27 @@ Sin el overlay, DataFlow utiliza el proveedor `LOCAL`.
 
 ### Infraestructura como código con Terraform
 
-El directorio `terraform/` contiene la configuración de infraestructura como código para gestionar el bucket de almacenamiento de DataFlow.
+El directorio terraform/ organiza las configuraciones de infraestructura como código por entorno:
 
-Actualmente, el proveedor de Terraform utiliza el proveedor AWS con un endpoint personalizado que apunta a PGSTY Silo (`http://127.0.0.1:9000`). Esto permite practicar la gestión declarativa de recursos S3 sin crear infraestructura en AWS ni generar costos asociados.
+`terraform/local-silo/:` contiene la configuración Terraform que gestiona el bucket dataflow-files mediante el proveedor AWS con un endpoint personalizado hacia PGSTY Silo (http://127.0.0.1:9000). Permite practicar la gestión declarativa de recursos compatibles con S3 sin crear infraestructura en AWS ni generar costos asociados.
+
+`terraform/aws/:` está reservado para la futura configuración de infraestructura real en AWS. Actualmente no contiene recursos ni configuraciones desplegables.
 
 La configuración contempla:
 
 - Declaración del bucket `dataflow-files`.
+
 - Importación del bucket existente al estado de Terraform.
+
 - Definición de salidas para consultar el nombre y ARN del recurso.
+
 - Fijación de la versión del proveedor mediante `.terraform.lock.hcl`.
 
-La configuración fue inicializada y validada. Además, se ejecutó un plan de Terraform que confirmó que el bucket existente coincide con la configuración declarada.
+La configuración local fue inicializada y validada. También se comprobó que el estado de Terraform conserva el recurso importado y que un plan con actualización del estado (refresh) no detecta diferencias con el bucket existente.
 
-Los archivos de estado, planes generados y directorio de trabajo de Terraform se excluyen del control de versiones. El archivo `.terraform.lock.hcl` sí se conserva en el repositorio.
+Los archivos de estado, planes generados y directorios de trabajo de Terraform se excluyen del control de versiones. El archivo .terraform.lock.hcl de cada entorno sí se conserva en el repositorio.
 
-**Alcance actual:** esta configuración valida el uso de Terraform contra el almacenamiento S3-compatible local. No representa un despliegue en AWS ni configura otros servicios de infraestructura cloud. La integración con servicios reales de AWS permanece como evolución futura.
+**Alcance actual:** únicamente está implementada y validada la gestión del bucket S3-compatible local. No representa un despliegue en AWS ni configura otros servicios de infraestructura cloud. La configuración de AWS se desarrollará posteriormente, de forma independiente.
 
 ### Puertos publicados
 
