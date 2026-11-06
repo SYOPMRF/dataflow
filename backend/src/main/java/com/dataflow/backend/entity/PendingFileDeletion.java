@@ -1,20 +1,24 @@
 package com.dataflow.backend.entity;
 
+import com.dataflow.backend.enums.StorageProvider;
+
 import java.util.UUID;
+import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.EnumType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "pending_file_deletions", uniqueConstraints = @UniqueConstraint(name = "uk_pending_file_deletions_stored_name", columnNames = "stored_name"))
@@ -29,6 +33,10 @@ public class PendingFileDeletion {
 
     @Column(name = "stored_name", nullable = false)
     private String storedName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "storage_provider", nullable = false, length = 20)
+    private StorageProvider storageProvider = StorageProvider.LOCAL;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
@@ -58,6 +66,10 @@ public class PendingFileDeletion {
 
         if (nextAttemptAt == null) {
             nextAttemptAt = now;
+        }
+
+        if (storageProvider == null) {
+            storageProvider = StorageProvider.LOCAL;
         }
     }
 }

@@ -24,8 +24,7 @@ public class FileController {
     public FileController(
             FileService fileService,
             FileStorageService fileStorageService,
-            UserService userService
-    ) {
+            UserService userService) {
         this.fileService = fileService;
         this.fileStorageService = fileStorageService;
         this.userService = userService;
@@ -35,20 +34,18 @@ public class FileController {
     @ResponseStatus(HttpStatus.CREATED)
     public FileResponse uploadFile(
             @RequestParam("file") MultipartFile file,
-            Authentication authentication
-    ) {
+            Authentication authentication) {
         User user = getAuthenticatedUser(authentication);
 
-        FileStorageService.StoredFile storedFile =
-                fileStorageService.store(file);
+        FileStorageService.StoredFile storedFile = fileStorageService.store(file);
 
         File savedFile = fileService.createFile(
                 user,
                 storedFile.originalName(),
                 storedFile.storedName(),
                 storedFile.fileType(),
-                storedFile.fileSize()
-        );
+                storedFile.fileSize(),
+                storedFile.storageProvider());
 
         return FileResponse.fromEntity(savedFile);
     }
@@ -66,8 +63,7 @@ public class FileController {
     @GetMapping("/{id}")
     public FileResponse getFile(
             @PathVariable Long id,
-            Authentication authentication
-    ) {
+            Authentication authentication) {
         User user = getAuthenticatedUser(authentication);
 
         File file = fileService.getUserFile(id, user);
@@ -79,8 +75,7 @@ public class FileController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteFile(
             @PathVariable Long id,
-            Authentication authentication
-    ) {
+            Authentication authentication) {
         User user = getAuthenticatedUser(authentication);
 
         fileService.deleteFile(id, user);

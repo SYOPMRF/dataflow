@@ -1,6 +1,7 @@
 package com.dataflow.backend.service;
 
 import com.dataflow.backend.entity.PendingFileDeletion;
+import com.dataflow.backend.enums.StorageProvider;
 import com.dataflow.backend.repository.PendingFileDeletionRepository;
 import java.util.List;
 import java.util.UUID;
@@ -30,8 +31,8 @@ public class PendingFileDeletionService {
     }
 
     @Transactional
-    public void enqueue(String storedName) {
-        repository.enqueueIfAbsent(storedName);
+    public void enqueue(String storedName, StorageProvider storageProvider) {
+        repository.enqueueIfAbsent(storedName, storageProvider.name());
     }
 
     public void processPendingDeletions() {
@@ -61,7 +62,9 @@ public class PendingFileDeletionService {
         }
 
         try {
-            fileStorageService.delete(pending.getStoredName());
+            fileStorageService.delete(
+                    pending.getStoredName(),
+                    pending.getStorageProvider());
         } catch (RuntimeException deletionException) {
             try {
                 boolean recorded = persistenceService.recordFailure(

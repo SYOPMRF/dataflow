@@ -1,6 +1,7 @@
 package com.dataflow.backend.repository;
 
 import com.dataflow.backend.entity.PendingFileDeletion;
+import com.dataflow.backend.enums.StorageProvider;
 
 import jakarta.persistence.LockModeType;
 
@@ -44,17 +45,21 @@ public interface PendingFileDeletionRepository
         @Query(value = """
                         INSERT INTO pending_file_deletions (
                             stored_name,
+                            storage_provider,
                             created_at,
                             next_attempt_at,
                             attempts
                         )
                         VALUES (
                             :storedName,
+                            :storageProvider,
                             CURRENT_TIMESTAMP,
                             CURRENT_TIMESTAMP,
                             0
                         )
                         ON CONFLICT (stored_name) DO NOTHING
                         """, nativeQuery = true)
-        int enqueueIfAbsent(@Param("storedName") String storedName);
+        int enqueueIfAbsent(
+                        @Param("storedName") String storedName,
+                        @Param("storageProvider") String storageProvider);
 }

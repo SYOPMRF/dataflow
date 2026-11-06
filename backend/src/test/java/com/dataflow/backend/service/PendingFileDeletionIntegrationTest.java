@@ -3,6 +3,7 @@ package com.dataflow.backend.service;
 import com.dataflow.backend.entity.File;
 import com.dataflow.backend.entity.User;
 import com.dataflow.backend.enums.FileStatus;
+import com.dataflow.backend.enums.StorageProvider;
 import com.dataflow.backend.repository.FileRepository;
 import com.dataflow.backend.repository.UserRepository;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -70,15 +71,18 @@ class PendingFileDeletionIntegrationTest {
         void enqueueShouldPersistPendingDeletionAndAvoidDuplicates() {
                 String storedName = UUID.randomUUID() + "-pending-test.csv";
 
-                pendingFileDeletionService.enqueue(storedName);
+                pendingFileDeletionService.enqueue(storedName, StorageProvider.LOCAL);
 
                 var pending = repository.findByStoredName(storedName);
 
                 assertTrue(pending.isPresent());
                 assertEquals(storedName, pending.orElseThrow().getStoredName());
+                assertEquals(
+                                StorageProvider.LOCAL,
+                                pending.orElseThrow().getStorageProvider());
                 assertEquals(0, pending.orElseThrow().getAttempts());
 
-                pendingFileDeletionService.enqueue(storedName);
+                pendingFileDeletionService.enqueue(storedName, StorageProvider.LOCAL);
 
                 assertEquals(
                                 1,
@@ -90,7 +94,7 @@ class PendingFileDeletionIntegrationTest {
         @Test
         void recordFailureShouldPersistRetryInformation() {
                 String storedName = UUID.randomUUID() + "-retry-test.csv";
-                pendingFileDeletionService.enqueue(storedName);
+                pendingFileDeletionService.enqueue(storedName, StorageProvider.LOCAL);
 
                 PendingFileDeletion pending = repository.findByStoredName(storedName)
                                 .orElseThrow();
@@ -127,14 +131,14 @@ class PendingFileDeletionIntegrationTest {
         void processPendingDeletionsShouldKeepTaskWhenPhysicalDeletionFails() {
                 String storedName = UUID.randomUUID() + "-physical-failure.csv";
 
-                pendingFileDeletionService.enqueue(storedName);
+                pendingFileDeletionService.enqueue(storedName, StorageProvider.LOCAL);
 
                 PendingFileDeletion pending = repository.findByStoredName(storedName)
                                 .orElseThrow();
 
                 doThrow(new RuntimeException("Simulated disk failure"))
                                 .when(fileStorageService)
-                                .delete(storedName);
+                                .delete(storedName, StorageProvider.LOCAL);
 
                 pendingFileDeletionService.processPendingDeletions();
 
@@ -177,13 +181,13 @@ class PendingFileDeletionIntegrationTest {
                 assertTrue(fileRepository.findById(fileId).isPresent());
                 assertTrue(repository.findByStoredName(storedName).isEmpty());
 
-                verify(fileStorageService, never()).delete(storedName);
+                verify(fileStorageService, never()).delete(storedName, StorageProvider.LOCAL);
         }
 
         @Test
         void claimBatchShouldReclaimTaskWhenLeaseExpires() {
                 String storedName = UUID.randomUUID() + "-expired-lease.csv";
-                pendingFileDeletionService.enqueue(storedName);
+                pendingFileDeletionService.enqueue(storedName, StorageProvider.LOCAL);
 
                 PendingFileDeletion original = repository.findByStoredName(storedName)
                                 .orElseThrow();
@@ -218,7 +222,7 @@ class PendingFileDeletionIntegrationTest {
         @Test
         void claimBatchShouldNotReclaimTaskWhileLeaseIsActive() {
                 String storedName = UUID.randomUUID() + "-active-lease.csv";
-                pendingFileDeletionService.enqueue(storedName);
+                pendingFileDeletionService.enqueue(storedName, StorageProvider.LOCAL);
 
                 PendingFileDeletion original = repository.findByStoredName(storedName)
                                 .orElseThrow();

@@ -23,8 +23,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 @Service
 public class FileAnalysisService {
@@ -111,8 +109,9 @@ public class FileAnalysisService {
                 }
 
                 try {
-                        Path filePath = fileStorageService.getFilePath(file.getStoredName());
-                        byte[] fileContent = Files.readAllBytes(filePath);
+                        byte[] fileContent = fileStorageService.read(
+                                        file.getStoredName(),
+                                        file.getStorageProvider());
 
                         AnalysisResult analysisResult = dataServiceClient.analyzeFile(
                                         fileContent,

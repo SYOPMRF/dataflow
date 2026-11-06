@@ -3,6 +3,7 @@ package com.dataflow.backend.service;
 import com.dataflow.backend.entity.File;
 import com.dataflow.backend.entity.User;
 import com.dataflow.backend.enums.FileStatus;
+import com.dataflow.backend.enums.StorageProvider;
 import com.dataflow.backend.exception.ResourceNotFoundException;
 import com.dataflow.backend.repository.AnalysisResultRepository;
 import com.dataflow.backend.repository.DataQualityIssueRepository;
@@ -11,6 +12,7 @@ import com.dataflow.backend.repository.FileRepository;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -20,6 +22,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -68,10 +71,12 @@ class FileServiceTest {
                                                 "test.csv",
                                                 "stored-file.csv",
                                                 "text/csv",
-                                                100L));
+                                                100L,
+                                                StorageProvider.LOCAL));
 
-                verify(fileStorageService)
-                                .delete("stored-file.csv");
+                verify(fileStorageService).delete(
+                                "stored-file.csv",
+                                StorageProvider.LOCAL);
 
                 verify(fileRepository)
                                 .save(any(File.class));
@@ -96,6 +101,7 @@ class FileServiceTest {
                 savedFile.setFileType("text/csv");
                 savedFile.setFileSize(100L);
                 savedFile.setStatus(FileStatus.UPLOADED);
+                savedFile.setStorageProvider(StorageProvider.LOCAL);
 
                 when(fileRepository.save(any(File.class)))
                                 .thenReturn(savedFile);
@@ -105,14 +111,18 @@ class FileServiceTest {
                                 "test.csv",
                                 "stored-file.csv",
                                 "text/csv",
-                                100L);
+                                100L,
+                                StorageProvider.LOCAL);
 
-                verify(fileRepository)
-                                .save(any(File.class));
+                ArgumentCaptor<File> fileCaptor = ArgumentCaptor.forClass(File.class);
 
-                verifyNoInteractions(fileStorageService);
+                verify(fileRepository).save(fileCaptor.capture());
 
+                assertEquals(
+                                StorageProvider.LOCAL,
+                                fileCaptor.getValue().getStorageProvider());
                 assertSame(savedFile, result);
+                verifyNoInteractions(fileStorageService);
         }
 
         @Test
@@ -125,6 +135,7 @@ class FileServiceTest {
                 file.setId(8L);
                 file.setUser(user);
                 file.setStoredName("stored-file.csv");
+                file.setStorageProvider(StorageProvider.LOCAL);
 
                 when(fileRepository.findByIdAndUser(8L, user))
                                 .thenReturn(Optional.of(file));
@@ -134,7 +145,9 @@ class FileServiceTest {
 
                         fileService.deleteFile(8L, user);
 
-                        verify(pendingFileDeletionService).enqueue("stored-file.csv");
+                        verify(pendingFileDeletionService).enqueue(
+                                        "stored-file.csv",
+                                        StorageProvider.LOCAL);
                         verify(dataQualityIssueRepository).deleteAllByFileId(8L);
                         verify(fileColumnRepository).deleteAllByFileId(8L);
                         verify(analysisResultRepository).deleteAllByFileId(8L);
@@ -159,6 +172,7 @@ class FileServiceTest {
                 file.setId(8L);
                 file.setUser(user);
                 file.setStoredName("stored-file.csv");
+                file.setStorageProvider(StorageProvider.LOCAL);
 
                 when(fileRepository.findByIdAndUser(8L, user))
                                 .thenReturn(Optional.of(file));
@@ -175,7 +189,9 @@ class FileServiceTest {
 
                         synchronization.afterCommit();
 
-                        verify(pendingFileDeletionService).enqueue("stored-file.csv");
+                        verify(pendingFileDeletionService).enqueue(
+                                        "stored-file.csv",
+                                        StorageProvider.LOCAL);
                         verify(pendingFileDeletionService).processPendingDeletions();
                         verifyNoInteractions(fileStorageService);
 
@@ -194,6 +210,7 @@ class FileServiceTest {
                 file.setId(8L);
                 file.setUser(user);
                 file.setStoredName("stored-file.csv");
+                file.setStorageProvider(StorageProvider.LOCAL);
 
                 when(fileRepository.findByIdAndUser(8L, user))
                                 .thenReturn(Optional.of(file));
@@ -212,7 +229,9 @@ class FileServiceTest {
 
                         assertDoesNotThrow(synchronization::afterCommit);
 
-                        verify(pendingFileDeletionService).enqueue("stored-file.csv");
+                        verify(pendingFileDeletionService).enqueue(
+                                        "stored-file.csv",
+                                        StorageProvider.LOCAL);
                         verify(pendingFileDeletionService).processPendingDeletions();
                         verifyNoInteractions(fileStorageService);
 
@@ -243,5 +262,70 @@ class FileServiceTest {
                                 pendingFileDeletionService);
 
                 verify(fileRepository, never()).delete(any(File.class));
+        }
+
+        @Test
+        void createFileShouldPersistS3StorageProvider() {
+                User user = new User();
+                user.setId(1L);
+
+                File savedFile = new File();
+                savedFile.setId(1L);
+                savedFile.setStorageProvider(StorageProvider.S3);
+
+                when(fileRepository.save(any(File.class)))
+                                .thenReturn(savedFile);
+
+                File result = fileService.createFile(
+                                user,
+                                "test.csv",
+                                "stored-file.csv",
+                                "text/csv",
+                                100L,
+                                StorageProvider.S3);
+
+                ArgumentCaptor<File> fileCaptor = ArgumentCaptor.forClass(File.class);
+
+                verify(fileRepository).save(fileCaptor.capture());
+
+                assertEquals(
+                                StorageProvider.S3,
+                                fileCaptor.getValue().getStorageProvider());
+
+                assertSame(savedFile, result);
+                verifyNoInteractions(fileStorageService);
+        }
+
+        @Test
+        void deleteFileShouldEnqueueDeletionWithS3Provider() {
+                User user = new User();
+                user.setId(1L);
+
+                File file = new File();
+                file.setId(8L);
+                file.setUser(user);
+                file.setStoredName("stored-file.csv");
+                file.setStorageProvider(StorageProvider.S3);
+
+                when(fileRepository.findByIdAndUser(8L, user))
+                                .thenReturn(Optional.of(file));
+
+                try {
+                        TransactionSynchronizationManager.initSynchronization();
+
+                        fileService.deleteFile(8L, user);
+
+                        verify(pendingFileDeletionService).enqueue(
+                                        "stored-file.csv",
+                                        StorageProvider.S3);
+
+                        verify(fileRepository).delete(file);
+
+                        verify(pendingFileDeletionService, never())
+                                        .processPendingDeletions();
+
+                } finally {
+                        TransactionSynchronizationManager.clearSynchronization();
+                }
         }
 }

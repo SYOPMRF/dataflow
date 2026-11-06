@@ -6,6 +6,7 @@ import com.dataflow.backend.dto.DataQualityIssue;
 import com.dataflow.backend.entity.AnalysisResultEntity;
 import com.dataflow.backend.entity.FileColumn;
 import com.dataflow.backend.entity.DataQualityIssueEntity;
+import com.dataflow.backend.enums.StorageProvider;
 import com.dataflow.backend.exception.ConflictException;
 import com.dataflow.backend.exception.ResourceNotFoundException;
 import com.dataflow.backend.entity.File;
@@ -92,6 +93,7 @@ class FileAnalysisServiceTest {
                 file.setFileType("text/csv");
                 file.setFileSize(100L);
                 file.setStatus(FileStatus.UPLOADED);
+                file.setStorageProvider(StorageProvider.LOCAL);
 
                 Path filePath = Files.createTempFile("dataflow-test-", ".csv");
                 Files.writeString(filePath, "name,age\nJohn,25\nJane,30\n");
@@ -115,8 +117,10 @@ class FileAnalysisServiceTest {
                                 eq(FileStatus.PROCESSING),
                                 eq(List.of(FileStatus.UPLOADED, FileStatus.FAILED)))).thenReturn(1);
 
-                when(fileStorageService.getFilePath("stored-test.csv"))
-                                .thenReturn(filePath);
+                when(fileStorageService.read(
+                                "stored-test.csv",
+                                StorageProvider.LOCAL))
+                                .thenReturn(Files.readAllBytes(filePath));
 
                 when(dataServiceClient.analyzeFile(
                                 any(byte[].class),
@@ -161,6 +165,7 @@ class FileAnalysisServiceTest {
                 file.setFileType("text/csv");
                 file.setFileSize(100L);
                 file.setStatus(FileStatus.UPLOADED);
+                file.setStorageProvider(StorageProvider.LOCAL);
 
                 Path filePath = Files.createTempFile("dataflow-test-", ".csv");
                 Files.writeString(filePath, "name,age\nJohn,25\nJane,30\n");
@@ -177,8 +182,10 @@ class FileAnalysisServiceTest {
                                 eq(FileStatus.PROCESSING),
                                 eq(List.of(FileStatus.UPLOADED, FileStatus.FAILED)))).thenReturn(1);
 
-                when(fileStorageService.getFilePath("stored-test.csv"))
-                                .thenReturn(filePath);
+                when(fileStorageService.read(
+                                "stored-test.csv",
+                                StorageProvider.LOCAL))
+                                .thenReturn(Files.readAllBytes(filePath));
 
                 when(dataServiceClient.analyzeFile(
                                 any(byte[].class),
@@ -224,6 +231,7 @@ class FileAnalysisServiceTest {
                 file.setFileType("text/csv");
                 file.setFileSize(100L);
                 file.setStatus(FileStatus.UPLOADED);
+                file.setStorageProvider(StorageProvider.LOCAL);
 
                 Path filePath = Files.createTempFile("dataflow-test-", ".csv");
                 try {
@@ -241,8 +249,10 @@ class FileAnalysisServiceTest {
                                         eq(user),
                                         eq(FileStatus.PROCESSING),
                                         eq(List.of(FileStatus.UPLOADED, FileStatus.FAILED)))).thenReturn(1);
-                        when(fileStorageService.getFilePath("stored-test.csv"))
-                                        .thenReturn(filePath);
+                        when(fileStorageService.read(
+                                        "stored-test.csv",
+                                        StorageProvider.LOCAL))
+                                        .thenReturn(Files.readAllBytes(filePath));
                         when(dataServiceClient.analyzeFile(any(byte[].class), eq("test.csv")))
                                         .thenReturn(analysisResult);
                         doThrow(new RuntimeException("Persistence failed"))

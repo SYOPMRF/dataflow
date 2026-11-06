@@ -1,5 +1,9 @@
 package com.dataflow.backend.exception;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.core.exception.SdkException;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
@@ -10,6 +14,8 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(ConflictException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public Map<String, String> handleConflict(ConflictException exception) {
@@ -19,24 +25,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> handleIllegalArgumentException(
-            IllegalArgumentException exception
-    ) {
+            IllegalArgumentException exception) {
         return Map.of("error", exception.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, Object> handleValidationException(
-            MethodArgumentNotValidException exception
-    ) {
+            MethodArgumentNotValidException exception) {
         Map<String, String> errors = exception.getBindingResult()
                 .getFieldErrors()
                 .stream()
                 .collect(Collectors.toMap(
                         error -> error.getField(),
                         error -> error.getDefaultMessage(),
-                        (first, second) -> first
-                ));
+                        (first, second) -> first));
 
         return Map.of("errors", errors);
     }
@@ -44,32 +47,37 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidCredentialsException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public Map<String, String> handleInvalidCredentials(
-            InvalidCredentialsException exception
-    ) {
+            InvalidCredentialsException exception) {
         return Map.of("error", exception.getMessage());
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public Map<String, String> handleResourceNotFound(
-            ResourceNotFoundException exception
-    ) {
+            ResourceNotFoundException exception) {
         return Map.of("error", exception.getMessage());
     }
 
     @ExceptionHandler(InvalidFileException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> handleInvalidFile(
-            InvalidFileException exception
-    ) {
+            InvalidFileException exception) {
         return Map.of("error", exception.getMessage());
     }
 
     @ExceptionHandler(FileProcessingException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Map<String, String> handleFileProcessingException(
-            FileProcessingException exception
-    ) {
+            FileProcessingException exception) {
         return Map.of("error", exception.getMessage());
+    }
+
+    @ExceptionHandler(SdkException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public Map<String, String> handleStorageSdkException(
+            SdkException exception) {
+        logger.error("Storage SDK operation failed", exception);
+
+        return Map.of("error", "Storage operation failed");
     }
 }

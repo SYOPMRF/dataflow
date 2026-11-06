@@ -12,31 +12,34 @@ El proyecto está construido como una arquitectura de servicios separados, con a
 - Hash de contraseñas mediante BCrypt.
 - Carga de archivos CSV y XLSX de hasta 10 MB.
 - Consulta y eliminación de archivos propios.
+- Almacenamiento de archivos mediante proveedores `LOCAL` y `S3`.
+- Integración S3-compatible local mediante PGSTY Silo y AWS SDK for Java 2.x.
+- Persistencia del proveedor de almacenamiento asociado a cada archivo.
 - Procesamiento de archivos mediante un servicio independiente en Python.
 - Estadísticas descriptivas generales y por columna.
 - Detección de problemas básicos de calidad de datos.
 - Persistencia de resultados de análisis en PostgreSQL.
 - Control de acceso por usuario.
 - Recuperación de archivos cuyo procesamiento quedó interrumpido.
-- Gestión de eliminaciones pendientes.
+- Eliminación diferida con persistencia de tareas y reintentos automáticos.
 - Ejecución de los servicios mediante Docker Compose.
 - Integración continua con GitHub Actions.
-
----
 
 ## Arquitectura
 
 DataFlow utiliza una arquitectura de servicios separados, donde cada componente tiene una responsabilidad específica.
 
-| Componente    | Tecnología                               | Responsabilidad                                                               |
-| ------------- | ---------------------------------------- | ----------------------------------------------------------------------------- |
-| Frontend      | React, TypeScript, Vite                  | Interfaz de usuario y comunicación con la API.                                |
-| Backend       | Java 21, Spring Boot                     | Autenticación, autorización, gestión de archivos y coordinación del análisis. |
-| Data Service  | Python, FastAPI, Pandas, NumPy, OpenPyXL | Lectura, análisis estadístico y comprobaciones de calidad.                    |
-| Base de datos | PostgreSQL                               | Persistencia de usuarios, archivos, resultados, columnas e incidencias.       |
-| Servidor web  | Nginx                                    | Servir el frontend y redirigir las solicitudes `/api/`.                       |
-| Contenedores  | Docker, Docker Compose                   | Construcción y ejecución de los servicios.                                    |
-| CI            | GitHub Actions                           | Ejecución de pruebas y validaciones automáticas.                              |
+| Componente                         | Tecnología                                       | Responsabilidad                                                                           |
+| ---------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Frontend                           | React, TypeScript, Vite                          | Interfaz de usuario y comunicación con la API.                                            |
+| Backend                            | Java 21, Spring Boot                             | Autenticación, autorización, gestión de archivos y coordinación del análisis.             |
+| Data Service                       | Python, FastAPI, Pandas, NumPy, OpenPyXL         | Lectura, análisis estadístico y comprobaciones de calidad.                                |
+| Base de datos                      | PostgreSQL                                       | Persistencia de usuarios, archivos, resultados, columnas e incidencias.                   |
+| Almacenamiento                     | FileStorage, sistema local, AWS SDK for Java 2.x | Abstracción para almacenar, leer y eliminar archivos mediante proveedores `LOCAL` o `S3`. |
+| Almacenamiento local S3-compatible | PGSTY Silo                                       | Servicio local de almacenamiento de objetos compatible con Amazon S3.                     |
+| Servidor web                       | Nginx                                            | Servir el frontend y redirigir las solicitudes `/api/`.                                   |
+| Contenedores                       | Docker, Docker Compose                           | Construcción y ejecución de los servicios.                                                |
+| CI                                 | GitHub Actions                                   | Ejecución de pruebas y validaciones automáticas.                                          |
 
 ### Flujo de procesamiento
 
@@ -52,6 +55,25 @@ El procesamiento de archivos sigue el siguiente flujo:
 8. El frontend consulta y presenta los resultados.
 
 **Separación de responsabilidades:** el backend es responsable de la autenticación, los permisos y la persistencia. El servicio Python se limita al procesamiento y análisis de datos.
+
+### Almacenamiento de archivos
+
+El backend utiliza la interfaz `FileStorage` para desacoplar la gestión de archivos del proveedor de almacenamiento.
+
+Actualmente se admiten dos proveedores:
+
+| Proveedor | Descripción                                                                                                              |
+| --------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `LOCAL`   | Almacena los archivos en el sistema de archivos del backend, utilizando el volumen persistente `uploads_data` en Docker. |
+| `S3`      | Almacena los archivos mediante la API compatible con Amazon S3, utilizando AWS SDK for Java 2.x.                         |
+
+Para el entorno local, la integración S3 se prueba mediante **PGSTY Silo**, un servicio compatible con la API de Amazon S3.
+
+El proveedor predeterminado se configura mediante `FILE_STORAGE_PROVIDER`. La configuración base utiliza `LOCAL`, mientras que el overlay `docker-compose.minio.yml` activa el proveedor `S3`.
+
+PostgreSQL conserva el proveedor asociado a cada archivo. Por eso, los archivos existentes pueden seguir leyéndose y eliminándose desde su almacenamiento original aunque cambie el proveedor predeterminado.
+
+**Importante:** cambiar de proveedor no migra automáticamente los archivos existentes.
 
 ---
 
@@ -144,15 +166,21 @@ Edita el archivo `.env` y reemplaza los valores de ejemplo por credenciales prop
 
 #### Variables de entorno
 
-| Variable            | Descripción                                                                   |
-| ------------------- | ----------------------------------------------------------------------------- |
-| `POSTGRES_DB`       | Nombre de la base de datos.                                                   |
-| `POSTGRES_USER`     | Usuario administrativo utilizado durante la inicialización y las migraciones. |
-| `POSTGRES_PASSWORD` | Contraseña del usuario administrativo.                                        |
-| `APP_DB_USER`       | Usuario de ejecución del backend.                                             |
-| `APP_DB_PASSWORD`   | Contraseña del usuario de ejecución.                                          |
-| `JWT_SECRET`        | Secreto utilizado para firmar los tokens JWT.                                 |
-| `JWT_EXPIRATION_MS` | Tiempo de expiración del token en milisegundos.                               |
+| Variable                     | Descripción                                                                       |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| `POSTGRES_DB`                | Nombre de la base de datos.                                                       |
+| `POSTGRES_USER`              | Usuario administrativo utilizado durante la inicialización y las migraciones.     |
+| `POSTGRES_PASSWORD`          | Contraseña del usuario administrativo.                                            |
+| `APP_DB_USER`                | Usuario de ejecución del backend.                                                 |
+| `APP_DB_PASSWORD`            | Contraseña del usuario de ejecución.                                              |
+| `JWT_SECRET`                 | Secreto utilizado para firmar los tokens JWT.                                     |
+| `JWT_EXPIRATION_MS`          | Tiempo de expiración del token en milisegundos.                                   |
+| `MINIO_ROOT_USER`            | Usuario administrativo de PGSTY Silo. Necesario para la modalidad S3.             |
+| `MINIO_ROOT_PASSWORD`        | Contraseña administrativa de PGSTY Silo. Necesaria para la modalidad S3.          |
+| `FILE_STORAGE_S3_ACCESS_KEY` | Clave de acceso del usuario de aplicación con permisos limitados sobre el bucket. |
+| `FILE_STORAGE_S3_SECRET_KEY` | Clave secreta del usuario de aplicación.                                          |
+
+**Almacenamiento S3-compatible:** las cuatro variables adicionales solo son necesarias cuando se utiliza el overlay `docker-compose.minio.yml`. Las credenciales administrativas de Silo deben ser diferentes de las credenciales específicas del backend. No se deben compartir ni publicar estos valores.
 
 **Consideraciones de seguridad:**
 
@@ -207,17 +235,52 @@ Una vez iniciados los servicios, la aplicación estará disponible en las siguie
 
 **Nota:** FastAPI se ejecuta dentro de la red de Docker y no publica un puerto directamente al host en la configuración principal.
 
-### 6. Detener los servicios
+### 6. Ejecutar con almacenamiento S3-compatible
 
-Para detener la aplicación:
+La configuración S3 es opcional y utiliza PGSTY Silo como almacenamiento de objetos local.
+
+Antes de iniciar esta modalidad:
+
+1. Configurar en `.env` las cuatro variables de Silo y del usuario de aplicación documentadas anteriormente.
+2. Iniciar los servicios utilizando el archivo Compose principal y el overlay:
 
 ```bash
+docker compose -f docker-compose.yml -f docker-compose.minio.yml up --build -d
+```
+
+3. Acceder a la consola de Silo:
+
+   `http://localhost:9001`
+
+4. Crear el bucket privado `dataflow-files`.
+5. Crear un usuario de aplicación y asignarle una política con permisos limitados sobre ese bucket. La política debe permitir `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` y `s3:ListBucket`.
+6. Comprobar que los servicios estén iniciados:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.minio.yml ps
+```
+
+El backend utiliza las credenciales del usuario de aplicación, no las credenciales administrativas de Silo.
+
+En esta modalidad, la API S3 está disponible dentro de Docker en `http://silo:9000`. La consola web se publica localmente en el puerto `9001`.
+
+### 7. Detener los servicios
+
+Para detener la aplicación con almacenamiento `LOCAL`:
+
+```bash id="m3g5fa"
 docker compose down
 ```
 
-Este comando detiene y elimina los contenedores, pero conserva los volúmenes de PostgreSQL y los archivos cargados.
+Para detener la aplicación con almacenamiento `S3`:
 
-**Importante:** no utilices `docker compose down -v` salvo que quieras eliminar deliberadamente los datos persistidos.
+```bash id="q8r2ve"
+docker compose -f docker-compose.yml -f docker-compose.minio.yml down
+```
+
+Ambos comandos detienen y eliminan los contenedores y las redes del entorno, pero conservan los volúmenes persistentes.
+
+**Importante:** no utilices `docker compose down -v` salvo que quieras eliminar deliberadamente los datos persistidos. Esto incluye los archivos locales y los objetos almacenados en Silo.
 
 ---
 
@@ -351,7 +414,9 @@ dataflow/
 ├── .github/
 │   └── workflows/            # Automatización CI
 │
-├── docker-compose.yml        # Orquestación de servicios
+├── docker-compose.yml        # Orquestación principal de servicios
+│
+├── docker-compose.minio.yml  # Overlay para almacenamiento S3 con Silo
 │
 ├── .env.example              # Plantilla de configuración
 │
@@ -362,18 +427,21 @@ dataflow/
 
 ## Alcance y evolución
 
-El alcance actual de DataFlow se centra en una aplicación funcional de carga, análisis y gestión de archivos, con persistencia, seguridad básica de aplicación, recuperación ante fallos y automatización de pruebas.
+El alcance actual de DataFlow comprende una aplicación funcional de carga, análisis y gestión de archivos, con persistencia, autenticación, control de acceso, recuperación ante fallos y automatización de pruebas.
+
+El almacenamiento admite los proveedores `LOCAL` y `S3`. La integración S3 se encuentra implementada y probada localmente mediante PGSTY Silo, utilizando AWS SDK for Java 2.x.
 
 Entre las posibles evoluciones del proyecto se encuentran:
 
-- Despliegue en AWS.
+- Despliegue de la aplicación en AWS.
+- Uso de Amazon S3 como servicio de almacenamiento en la nube, aprovechando la integración existente.
 - Infraestructura como código con Terraform.
-- Almacenamiento de archivos en servicios cloud.
-- Métricas y observabilidad avanzada.
+- Métricas y observabilidad avanzada con Prometheus y Grafana.
 - Mejoras de escalabilidad y rendimiento.
 - Reglas de calidad configurables y métricas agregadas.
+- Orquestación con Kubernetes, si las necesidades del proyecto lo justifican.
 
-Estas evoluciones representan posibilidades futuras y **no forman parte de las funcionalidades implementadas actualmente**.
+Estas evoluciones representan posibilidades futuras y no deben confundirse con las funcionalidades ya implementadas.
 
 ---
 

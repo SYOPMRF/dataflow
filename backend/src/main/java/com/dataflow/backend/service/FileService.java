@@ -3,6 +3,7 @@ package com.dataflow.backend.service;
 import com.dataflow.backend.entity.File;
 import com.dataflow.backend.entity.User;
 import com.dataflow.backend.enums.FileStatus;
+import com.dataflow.backend.enums.StorageProvider;
 import com.dataflow.backend.exception.ResourceNotFoundException;
 import com.dataflow.backend.repository.AnalysisResultRepository;
 import com.dataflow.backend.repository.DataQualityIssueRepository;
@@ -50,7 +51,8 @@ public class FileService {
             String originalName,
             String storedName,
             String fileType,
-            Long fileSize) {
+            Long fileSize,
+            StorageProvider storageProvider) {
         File file = new File();
 
         file.setUser(user);
@@ -58,13 +60,14 @@ public class FileService {
         file.setStoredName(storedName);
         file.setFileType(fileType);
         file.setFileSize(fileSize);
+        file.setStorageProvider(storageProvider);
         file.setStatus(FileStatus.UPLOADED);
 
         try {
             return fileRepository.save(file);
         } catch (RuntimeException exception) {
             try {
-                fileStorageService.delete(storedName);
+                fileStorageService.delete(storedName, storageProvider);
             } catch (RuntimeException cleanupException) {
                 exception.addSuppressed(cleanupException);
             }
@@ -86,8 +89,9 @@ public class FileService {
     public void deleteFile(Long fileId, User user) {
         File file = getUserFile(fileId, user);
         String storedName = file.getStoredName();
+        StorageProvider storageProvider = file.getStorageProvider();
 
-        pendingFileDeletionService.enqueue(storedName);
+        pendingFileDeletionService.enqueue(storedName, storageProvider);
 
         dataQualityIssueRepository.deleteAllByFileId(fileId);
         fileColumnRepository.deleteAllByFileId(fileId);

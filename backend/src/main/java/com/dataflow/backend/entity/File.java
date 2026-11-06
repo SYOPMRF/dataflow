@@ -1,6 +1,8 @@
 package com.dataflow.backend.entity;
 
 import com.dataflow.backend.enums.FileStatus;
+import com.dataflow.backend.enums.StorageProvider;
+
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -39,6 +41,10 @@ public class File {
     @Column(nullable = false)
     private FileStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "storage_provider", nullable = false, length = 20)
+    private StorageProvider storageProvider = StorageProvider.LOCAL;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -54,6 +60,10 @@ public class File {
 
         if (status == null) {
             status = FileStatus.UPLOADED;
+        }
+
+        if (storageProvider == null) {
+            storageProvider = StorageProvider.LOCAL;
         }
     }
 }

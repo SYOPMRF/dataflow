@@ -1,6 +1,7 @@
 package com.dataflow.backend.service;
 
 import com.dataflow.backend.entity.PendingFileDeletion;
+import com.dataflow.backend.enums.StorageProvider;
 import com.dataflow.backend.repository.PendingFileDeletionRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -40,6 +41,7 @@ class PendingFileDeletionServiceTest {
                 PendingFileDeletion pending = new PendingFileDeletion();
                 pending.setId(id);
                 pending.setStoredName(storedName);
+                pending.setStorageProvider(StorageProvider.LOCAL);
                 pending.setClaimToken(UUID.randomUUID());
                 pending.setClaimedUntil(LocalDateTime.now().plusMinutes(5));
                 return pending;
@@ -54,7 +56,7 @@ class PendingFileDeletionServiceTest {
 
                 pendingFileDeletionService.processOne(pending);
 
-                verify(fileStorageService).delete("stored-file.csv");
+                verify(fileStorageService).delete("stored-file.csv", StorageProvider.LOCAL);
                 verify(persistenceService)
                                 .removePending(1L, pending.getClaimToken());
                 verify(persistenceService, never())
@@ -67,7 +69,7 @@ class PendingFileDeletionServiceTest {
 
                 doThrow(new RuntimeException("Storage unavailable"))
                                 .when(fileStorageService)
-                                .delete("stored-file.csv");
+                                .delete("stored-file.csv", StorageProvider.LOCAL);
 
                 when(persistenceService.recordFailure(
                                 eq(2L),
@@ -78,7 +80,7 @@ class PendingFileDeletionServiceTest {
                 assertDoesNotThrow(
                                 () -> pendingFileDeletionService.processOne(pending));
 
-                verify(fileStorageService).delete("stored-file.csv");
+                verify(fileStorageService).delete("stored-file.csv", StorageProvider.LOCAL);
                 verify(persistenceService).recordFailure(
                                 eq(2L),
                                 eq(pending.getClaimToken()),
@@ -106,8 +108,8 @@ class PendingFileDeletionServiceTest {
                 pendingFileDeletionService.processPendingDeletions();
 
                 verify(persistenceService).claimBatch(50);
-                verify(fileStorageService).delete("older-eligible.csv");
-                verify(fileStorageService).delete("newer-eligible.csv");
+                verify(fileStorageService).delete("older-eligible.csv", StorageProvider.LOCAL);
+                verify(fileStorageService).delete("newer-eligible.csv", StorageProvider.LOCAL);
                 verify(persistenceService)
                                 .removePending(3L, first.getClaimToken());
                 verify(persistenceService)
@@ -124,7 +126,7 @@ class PendingFileDeletionServiceTest {
 
                 doThrow(new RuntimeException("Storage unavailable"))
                                 .when(fileStorageService)
-                                .delete("failed-file.csv");
+                                .delete("failed-file.csv", StorageProvider.LOCAL);
 
                 when(persistenceService.recordFailure(
                                 eq(5L),
@@ -139,8 +141,8 @@ class PendingFileDeletionServiceTest {
                 assertDoesNotThrow(
                                 () -> pendingFileDeletionService.processPendingDeletions());
 
-                verify(fileStorageService).delete("failed-file.csv");
-                verify(fileStorageService).delete("successful-file.csv");
+                verify(fileStorageService).delete("failed-file.csv", StorageProvider.LOCAL);
+                verify(fileStorageService).delete("successful-file.csv", StorageProvider.LOCAL);
                 verify(persistenceService).recordFailure(
                                 eq(5L),
                                 eq(failed.getClaimToken()),
@@ -157,7 +159,7 @@ class PendingFileDeletionServiceTest {
 
                 pendingFileDeletionService.processOne(pending);
 
-                verify(fileStorageService, never()).delete(any());
+                verify(fileStorageService, never()).delete(any(), any(StorageProvider.class));
                 verify(persistenceService, never())
                                 .removePending(anyLong(), any(UUID.class));
                 verify(persistenceService, never())
@@ -179,7 +181,7 @@ class PendingFileDeletionServiceTest {
                 assertDoesNotThrow(
                                 () -> pendingFileDeletionService.processOne(pending));
 
-                verify(fileStorageService).delete("stored-file.csv");
+                verify(fileStorageService).delete("stored-file.csv", StorageProvider.LOCAL);
                 verify(persistenceService)
                                 .removePending(8L, pending.getClaimToken());
                 verify(persistenceService, never())

@@ -70,7 +70,16 @@ Los archivos admitidos son CSV y XLSX, con un tamaño máximo de 10 MB.
 
 El almacenamiento utiliza nombres generados mediante UUID para evitar depender del nombre original y reducir conflictos entre archivos.
 
-Los metadatos se registran en PostgreSQL y el contenido se almacena en el sistema de archivos, utilizando un volumen persistente en Docker.
+El backend implementa una abstracción de almacenamiento mediante la interfaz `FileStorage`, que permite utilizar dos proveedores:
+
+- **LOCAL:** almacena los archivos en el sistema de archivos del backend, utilizando el volumen persistente `uploads_data` en Docker.
+- **S3:** almacena los archivos en un servicio compatible con la API de Amazon S3, utilizando AWS SDK for Java 2.x. En el entorno local se utiliza Silo como almacenamiento S3-compatible.
+
+El proveedor predeterminado se configura mediante `FILE_STORAGE_PROVIDER`. La configuración inicial utiliza `LOCAL`; el entorno S3 se activa mediante el overlay `docker-compose.minio.yml`.
+
+Los metadatos de cada archivo se registran en PostgreSQL, incluyendo el proveedor utilizado. Esto permite que cada archivo se lea y elimine mediante el almacenamiento donde fue creado, incluso si posteriormente cambia el proveedor predeterminado.
+
+La incorporación de S3 no migra automáticamente los archivos existentes. Los archivos almacenados localmente conservan su proveedor original.
 
 #### Procesamiento y estados
 
@@ -223,9 +232,20 @@ DataFlow incorpora mecanismos para manejar situaciones en las que una operación
 
 La eliminación de un archivo contempla tanto sus registros asociados como su contenido físico.
 
-El backend registra las eliminaciones pendientes y coordina la limpieza del archivo físico después de confirmar la transacción de base de datos.
+El backend registra una tarea de eliminación pendiente dentro de la misma transacción que elimina los metadatos del archivo y sus resultados asociados.
 
-Un servicio programado procesa periódicamente las eliminaciones pendientes que no pudieron completarse.
+La limpieza física se intenta después de confirmar la transacción mediante un mecanismo de sincronización de Spring. Si la eliminación física falla, la tarea permanece registrada en PostgreSQL para permitir nuevos intentos.
+
+Cada tarea conserva el nombre almacenado y el proveedor de almacenamiento original (`LOCAL` o `S3`), de modo que la eliminación se ejecuta en el almacenamiento correcto, independientemente de la configuración predeterminada actual.
+
+Un servicio programado procesa periódicamente las tareas pendientes en lotes de hasta 50 elementos. El mecanismo utiliza:
+
+- Bloqueos de filas con `FOR UPDATE SKIP LOCKED` para coordinar la reclamación de tareas entre trabajadores.
+- Tokens de reclamación y períodos de vigencia para controlar la propiedad temporal de cada tarea.
+- Reintentos con espera progresiva, limitada a un máximo de 60 minutos entre intentos.
+- Registro del número de intentos y del último error.
+
+Este mecanismo permite recuperar eliminaciones que no pudieron completarse por interrupciones o fallos temporales del almacenamiento.
 
 ### 5.2. Recuperación de procesamientos interrumpidos
 
@@ -253,10 +273,30 @@ Los servicios se comunican mediante una red interna de Docker.
 
 La infraestructura utiliza los siguientes volúmenes:
 
-| Volumen         | Descripción                                      |
-| --------------- | ------------------------------------------------ |
-| `postgres_data` | Almacena los datos persistentes de PostgreSQL.   |
-| `uploads_data`  | Almacena los archivos cargados por los usuarios. |
+| Volumen         | Descripción                                    |
+| --------------- | ---------------------------------------------- |
+| `postgres_data` | Almacena los datos persistentes de PostgreSQL. |
+| `uploads_data`  | Almacena los archivos del proveedor `LOCAL`.   |
+
+### Almacenamiento S3-compatible local
+
+De forma opcional, se puede incorporar PGSTY Silo mediante el overlay `docker-compose.minio.yml`.
+
+Este servicio implementa una API compatible con Amazon S3 y permite probar el almacenamiento de objetos localmente sin depender de AWS.
+
+El overlay añade:
+
+- **silo:** servicio de almacenamiento de objetos.
+- `minio_data`: volumen persistente para los objetos almacenados.
+
+Los puertos se publican únicamente en la interfaz local del host:
+
+- `9000`: API S3.
+- `9001`: consola web de administración.
+
+El backend se conecta a Silo mediante la red interna de Docker y utiliza credenciales específicas de aplicación con permisos limitados sobre el bucket configurado.
+
+Sin el overlay, DataFlow utiliza el proveedor `LOCAL`.
 
 ### Puertos publicados
 
@@ -288,12 +328,14 @@ La arquitectura busca mantener responsabilidades separadas y facilitar el manten
 
 ## 8. Evoluciones futuras
 
-Las siguientes tecnologías y capacidades se consideran posibles evoluciones, no funcionalidades incluidas en la implementación actual:
+DataFlow ya incorpora almacenamiento mediante la API compatible con Amazon S3, probado localmente con PGSTY Silo. Por tanto, esta capacidad forma parte de la implementación actual y no se considera una funcionalidad pendiente.
 
-- Despliegue en AWS.
-- Infraestructura como código mediante Terraform.
-- Almacenamiento de archivos en servicios cloud como Amazon S3.
-- Monitoreo avanzado con Prometheus y Grafana.
-- Orquestación con Kubernetes, si las necesidades del proyecto lo justifican.
+Las siguientes tecnologías y capacidades se consideran posibles evoluciones:
 
----
+- **Despliegue en AWS:** trasladar la infraestructura local a servicios administrados en la nube.
+- **Amazon S3:** utilizar el servicio de almacenamiento de objetos de AWS con la integración existente, adaptando las credenciales, permisos y configuración del entorno.
+- **Infraestructura como código mediante Terraform:** automatizar el aprovisionamiento de infraestructura.
+- **Monitoreo avanzado con Prometheus y Grafana:** incorporar métricas, paneles y alertas.
+- **Orquestación con Kubernetes:** evaluar su incorporación si las necesidades del proyecto lo justifican.
+
+La migración de archivos existentes entre proveedores de almacenamiento requerirá un procedimiento específico, ya que DataFlow no la realiza automáticamente.

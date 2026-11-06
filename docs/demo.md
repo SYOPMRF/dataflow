@@ -21,7 +21,14 @@ Antes de iniciar, es necesario contar con:
 
 ---
 
-## 3. Iniciar la aplicación
+## 3. Modalidades de almacenamiento
+
+DataFlow permite ejecutar la demostración con dos proveedores de almacenamiento:
+
+- **LOCAL:** utiliza el sistema de archivos del backend y el volumen persistente `uploads_data`. Es la configuración predeterminada.
+- **S3:** utiliza PGSTY Silo como almacenamiento de objetos compatible con Amazon S3. Se activa mediante el overlay `docker-compose.minio.yml`.
+
+### Demostración con almacenamiento LOCAL
 
 Desde la raíz del proyecto, ejecutar:
 
@@ -29,21 +36,59 @@ Desde la raíz del proyecto, ejecutar:
 docker compose up --build -d
 ```
 
-Comprobar que los servicios estén iniciados:
+### Demostración con almacenamiento S3-compatible
+
+Antes de iniciar esta modalidad, configurar en `.env` las credenciales administrativas de Silo y las credenciales específicas del usuario de aplicación.
+
+**1. Iniciar únicamente el servicio Silo:**
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.minio.yml up -d silo
+```
+
+**2. Configurar el almacenamiento desde la consola web:**
+
+Acceder a `http://localhost:9001` y:
+
+- Crear el bucket privado `dataflow-files`.
+- Crear el usuario de aplicación.
+- Asignarle una política con permisos limitados sobre ese bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` y `s3:ListBucket`.
+
+**3. Iniciar el resto del entorno con ambos archivos Compose:**
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.minio.yml up --build -d
+```
+
+El backend utiliza las credenciales del usuario de aplicación, no las credenciales administrativas de Silo.
+
+La API S3 está disponible dentro de Docker en `http://silo:9000`. La consola web se publica localmente en el puerto `9001`.
+
+## 4. Iniciar y comprobar la aplicación
+
+Después de seleccionar la modalidad de almacenamiento de la sección anterior, comprobar que los servicios estén iniciados.
+
+Para la modalidad LOCAL:
 
 ```bash
 docker compose ps
 ```
 
+Para la modalidad S3-compatible:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.minio.yml ps
+```
+
 ### Servicios principales
 
-| Servicio   | Dirección                                      |
-| ---------- | ---------------------------------------------- |
-| Frontend   | [http://localhost:3000](http://localhost:3000) |
-| Backend    | [http://localhost:8080](http://localhost:8080) |
-| PostgreSQL | `localhost:5433`                               |
+| Servicio   | Dirección local         |
+| ---------- | ----------------------- |
+| Frontend   | `http://localhost:3000` |
+| Backend    | `http://localhost:8080` |
+| PostgreSQL | `localhost:5433`        |
 
-FastAPI se comunica internamente con el backend mediante la red de Docker.
+En ambas modalidades, FastAPI se comunica internamente con el backend mediante la red de Docker.
 
 ### Comprobación de disponibilidad
 
@@ -59,9 +104,7 @@ Para comprobar la disponibilidad del Data Service a través del backend:
 curl http://localhost:8080/api/data-service/health
 ```
 
----
-
-## 4. Archivo de demostración
+## 5. Archivo de demostración
 
 Se propone utilizar el siguiente archivo de ejemplo:
 
@@ -90,9 +133,7 @@ Este archivo contiene:
 
 Es un archivo pequeño, reproducible y apropiado para una demostración inicial.
 
----
-
-## 5. Recorrido de demostración
+## 6. Recorrido de demostración
 
 ### Paso 1. Registro
 
@@ -175,13 +216,20 @@ Este paso permite demostrar que los resultados se almacenan en PostgreSQL y pued
 
 La eliminación también contempla los registros asociados y la limpieza del archivo físico mediante el mecanismo de eliminaciones pendientes.
 
+El proveedor de almacenamiento utilizado originalmente queda registrado para que la limpieza se realice en el destino correcto:
+
+- Con `LOCAL`, se elimina el archivo del sistema de archivos del backend.
+- Con `S3`, se elimina el objeto almacenado en el bucket de Silo.
+
+Si la eliminación física falla, el sistema conserva la tarea pendiente en PostgreSQL y programa nuevos intentos.
+
 ### Paso 8. Cerrar sesión
 
 Utilizar la opción **Cerrar sesión** y comprobar que se regresa a la pantalla de autenticación.
 
 ---
 
-## 6. Aspectos técnicos que se pueden explicar
+## 7. Aspectos técnicos que se pueden explicar
 
 Durante la demostración se pueden describir brevemente las tecnologías y responsabilidades principales:
 
@@ -197,7 +245,7 @@ Durante la demostración se pueden describir brevemente las tecnologías y respo
 
 ---
 
-## 7. Limitaciones actuales
+## 8. Limitaciones actuales
 
 La demostración debe presentar únicamente funcionalidades implementadas.
 
@@ -207,21 +255,29 @@ Las siguientes limitaciones deben tenerse en cuenta:
 - La calidad se presenta mediante las incidencias detectadas durante el análisis individual.
 - Las reglas de calidad son básicas y no representan una evaluación exhaustiva.
 - El procesamiento se ejecuta mediante solicitudes al backend y al Data Service; no se presenta como un sistema distribuido de procesamiento por lotes.
-- La infraestructura documentada corresponde al entorno local con Docker Compose.
-- AWS, Terraform y Kubernetes son evoluciones futuras y no forman parte de la implementación actual.
+- La infraestructura implementada y probada corresponde al entorno local con Docker Compose.
+- El almacenamiento S3-compatible está implementado y probado localmente mediante PGSTY Silo.
+- El despliegue en AWS, el aprovisionamiento mediante Terraform y la orquestación con Kubernetes siguen siendo evoluciones futuras.
+- La migración automática de archivos existentes entre proveedores de almacenamiento no está implementada.
 
 ---
 
-## 8. Detener la aplicación
+## 9. Detener la aplicación
 
-Al terminar la demostración, desde la raíz del proyecto ejecutar:
+Al terminar la demostración, detener los servicios según la modalidad utilizada.
+
+**Modalidad LOCAL:**
 
 ```bash
 docker compose down
 ```
 
-Este comando detiene y elimina los contenedores y la red del entorno, pero conserva los volúmenes persistentes.
+**Modalidad S3-compatible:**
 
-**Importante:** no utilizar `docker compose down -v`, porque eliminaría los volúmenes y los datos persistentes.
+```bash
+docker compose -f docker-compose.yml -f docker-compose.minio.yml down
+```
 
----
+Estos comandos detienen y eliminan los contenedores y las redes del entorno, pero conservan los volúmenes persistentes.
+
+**Importante:** no utilizar `docker compose down -v`, porque eliminaría los volúmenes y los datos persistentes, incluidos los archivos almacenados localmente y los objetos de Silo.
