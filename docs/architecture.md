@@ -298,6 +298,25 @@ El backend se conecta a Silo mediante la red interna de Docker y utiliza credenc
 
 Sin el overlay, DataFlow utiliza el proveedor `LOCAL`.
 
+### Infraestructura como código con Terraform
+
+El directorio `terraform/` contiene la configuración de infraestructura como código para gestionar el bucket de almacenamiento de DataFlow.
+
+Actualmente, el proveedor de Terraform utiliza el proveedor AWS con un endpoint personalizado que apunta a PGSTY Silo (`http://127.0.0.1:9000`). Esto permite practicar la gestión declarativa de recursos S3 sin crear infraestructura en AWS ni generar costos asociados.
+
+La configuración contempla:
+
+- Declaración del bucket `dataflow-files`.
+- Importación del bucket existente al estado de Terraform.
+- Definición de salidas para consultar el nombre y ARN del recurso.
+- Fijación de la versión del proveedor mediante `.terraform.lock.hcl`.
+
+La configuración fue inicializada y validada. Además, se ejecutó un plan de Terraform que confirmó que el bucket existente coincide con la configuración declarada.
+
+Los archivos de estado, planes generados y directorio de trabajo de Terraform se excluyen del control de versiones. El archivo `.terraform.lock.hcl` sí se conserva en el repositorio.
+
+**Alcance actual:** esta configuración valida el uso de Terraform contra el almacenamiento S3-compatible local. No representa un despliegue en AWS ni configura otros servicios de infraestructura cloud. La integración con servicios reales de AWS permanece como evolución futura.
+
 ### Puertos publicados
 
 Los puertos publicados se limitan a la interfaz local del host:

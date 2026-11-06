@@ -41,3 +41,11 @@ uploads/
 # Local test files
 backend/*.csv
 /test_data.csv
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log

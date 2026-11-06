@@ -431,11 +431,13 @@ El alcance actual de DataFlow comprende una aplicación funcional de carga, aná
 
 El almacenamiento admite los proveedores `LOCAL` y `S3`. La integración S3 se encuentra implementada y probada localmente mediante PGSTY Silo, utilizando AWS SDK for Java 2.x.
 
+La infraestructura como código también cuenta con una configuración inicial de Terraform, validada contra el bucket S3-compatible local. Esta configuración permite gestionar declarativamente el almacenamiento de objetos sin depender de una cuenta de AWS.
+
 Entre las posibles evoluciones del proyecto se encuentran:
 
 - Despliegue de la aplicación en AWS.
-- Uso de Amazon S3 como servicio de almacenamiento en la nube, aprovechando la integración existente.
-- Infraestructura como código con Terraform.
+- Uso de Amazon S3 como servicio de almacenamiento en la nube.
+- Ampliación de Terraform para gestionar infraestructura real en AWS, incluyendo los servicios necesarios para el despliegue.
 - Métricas y observabilidad avanzada con Prometheus y Grafana.
 - Mejoras de escalabilidad y rendimiento.
 - Reglas de calidad configurables y métricas agregadas.
