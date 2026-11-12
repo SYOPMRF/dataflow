@@ -1,6 +1,6 @@
 # DataFlow
 
-**DataFlow** es una aplicación web para cargar, procesar y analizar archivos CSV y Excel. Proporciona estadísticas descriptivas y comprobaciones básicas de calidad de datos, con gestión de archivos y resultados asociados a cada usuario.
+**DataFlow** es una aplicación web para cargar, procesar y analizar archivos CSV y XLSX. Proporciona perfilado estadístico, detección de duplicados y claves candidatas, análisis de distribuciones y correlaciones, y validaciones de calidad de datos, con gestión de archivos y resultados persistidos por usuario.
 
 El proyecto está construido como una arquitectura de servicios separados, con autenticación, persistencia, procesamiento de datos, contenedores y pruebas automatizadas.
 
@@ -16,8 +16,11 @@ El proyecto está construido como una arquitectura de servicios separados, con a
 - Integración S3-compatible local mediante PGSTY Silo y AWS SDK for Java 2.x.
 - Persistencia del proveedor de almacenamiento asociado a cada archivo.
 - Procesamiento de archivos mediante un servicio independiente en Python.
-- Estadísticas descriptivas generales y por columna.
-- Detección de problemas básicos de calidad de datos.
+- Estadísticas descriptivas y perfilado avanzado por columna.
+- Detección de duplicados y posibles claves candidatas.
+- Análisis de distribuciones numéricas y categóricas.
+- Correlaciones Pearson y Spearman.
+- Validaciones generales, de formato y consistencia semántica.
 - Persistencia de resultados de análisis en PostgreSQL.
 - Control de acceso por usuario.
 - Recuperación de archivos cuyo procesamiento quedó interrumpido.
@@ -51,7 +54,7 @@ El procesamiento de archivos sigue el siguiente flujo:
 4. El archivo se almacena y su procesamiento se coordina desde el backend.
 5. Spring Boot envía el archivo al servicio FastAPI.
 6. FastAPI analiza los datos y devuelve un resultado estructurado.
-7. Spring Boot persiste las estadísticas y las incidencias en PostgreSQL.
+7. Spring Boot persiste las estadísticas, los análisis avanzados y las incidencias en PostgreSQL.
 8. El frontend consulta y presenta los resultados.
 
 **Separación de responsabilidades:** el backend es responsable de la autenticación, los permisos y la persistencia. El servicio Python se limita al procesamiento y análisis de datos.
@@ -79,12 +82,11 @@ PostgreSQL conserva el proveedor asociado a cada archivo. Por eso, los archivos 
 
 ## Análisis de datos
 
-DataFlow proporciona estadísticas descriptivas y comprobaciones iniciales de calidad sobre los archivos procesados.
+DataFlow ofrece un análisis de perfilado, estadística descriptiva y calidad de datos para archivos CSV y XLSX.
 
 ### Estadísticas generales
 
-- Número de filas.
-- Número de columnas.
+- Número de filas y columnas.
 - Cantidad total de valores ausentes.
 - Cantidad de filas duplicadas.
 
@@ -96,22 +98,53 @@ DataFlow proporciona estadísticas descriptivas y comprobaciones iniciales de ca
 - Cantidad de valores duplicados.
 - Valor mínimo y máximo.
 - Media, mediana y desviación estándar para columnas numéricas.
+- Cuartiles (Q1 y Q3), rango intercuartílico (IQR) y percentiles 5, 10, 90 y 95.
 - Cantidad de ceros y valores negativos.
+- Cantidad de valores atípicos detectados mediante IQR y Z-score.
 
-Las estadísticas que no corresponden al tipo de dato de una columna no se calculan.
+Las métricas numéricas se calculan cuando corresponden al tipo de dato y existen observaciones válidas.
+
+### Duplicados y claves candidatas
+
+El análisis identifica filas duplicadas y examina combinaciones de columnas para detectar posibles claves candidatas. También presenta grupos de valores repetidos y ejemplos de duplicados.
+
+Una clave candidata es una combinación que parece identificar registros de forma única en los datos evaluados; no constituye una restricción ni una garantía de integridad en la base de datos original.
+
+### Distribuciones
+
+- Histogramas para variables numéricas.
+- Distribuciones de frecuencias para variables categóricas.
+
+### Correlaciones
+
+Se calculan matrices de correlación Pearson y Spearman para variables numéricas, junto con el número de observaciones válidas utilizado en cada par.
+
+Pearson mide relaciones lineales y Spearman relaciones monotónicas. Una correlación no demuestra causalidad.
 
 ### Comprobaciones de calidad
 
-El servicio aplica las siguientes reglas básicas:
+El análisis incluye reglas sobre:
 
-| Regla                             | Severidad |
-| --------------------------------- | --------- |
-| Columna completamente vacía       | `HIGH`    |
-| Al menos 50 % de valores ausentes | `HIGH`    |
-| Presencia de valores ausentes     | `MEDIUM`  |
-| Presencia de valores negativos    | `MEDIUM`  |
+| Comprobación | Severidad |
+| --- | --- |
+| Columna completamente vacía | `HIGH` |
+| Al menos 50 % de valores ausentes | `HIGH` |
+| Presencia de valores ausentes | `MEDIUM` |
+| Presencia de valores negativos | `MEDIUM` |
 
-Estas comprobaciones constituyen una evaluación inicial basada en reglas. Actualmente, el proyecto no implementa un indicador agregado de calidad ni un sistema configurable de reglas.
+También incorpora validaciones de formato para columnas reconocidas como correo electrónico, URL y fechas, y validaciones semánticas para determinados datos de pedidos, descuentos y entregas.
+
+Entre las incidencias semánticas detectadas se encuentran entregas sin fecha, descuentos fuera del intervalo permitido y totales de pedidos inconsistentes con sus cantidades, precios y descuentos.
+
+Las incidencias pueden incluir columnas relacionadas y cantidad de filas afectadas cuando esa información está disponible.
+
+### Alcance y limitaciones del análisis
+
+Los resultados se persisten en PostgreSQL y pueden consultarse posteriormente sin repetir el procesamiento.
+
+El análisis tiene límites deliberados: algunas evaluaciones están acotadas para controlar su coste, las correlaciones requieren observaciones numéricas válidas y las validaciones semánticas dependen de nombres de columnas reconocidos y de los campos disponibles.
+
+DataFlow no implementa actualmente un indicador agregado de calidad ni un sistema de reglas configurable. Las correlaciones tampoco permiten establecer relaciones causales.
 
 ---
 
@@ -449,6 +482,10 @@ Estas evoluciones representan posibilidades futuras y no deben confundirse con l
 
 ## Estado del proyecto
 
-**DataFlow se encuentra en la fase de cierre de su MVP**, con preparación de documentación y demostración técnica.
+**DataFlow cuenta con las funcionalidades principales de su MVP implementadas.**
+
+La Fase 1 de análisis avanzado está desarrollada y validada localmente mediante pruebas automatizadas y una demostración funcional de extremo a extremo.
+
+El cierre formal queda sujeto a la revisión final de los cambios, la validación de integración continua sobre la versión actual y la preparación del commit correspondiente.
 
 ---

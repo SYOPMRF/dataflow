@@ -5,6 +5,13 @@ import type {
   FileResponse,
   LoginResponse,
   UserResponse,
+  CandidateKey,
+  DuplicateAnalysis,
+  DuplicateGroup,
+  DuplicateValueExample,
+  ColumnDistribution,
+  CorrelationAnalysis,
+  DistributionAnalysis,
 } from "../types/api";
 
 const API_BASE_URL = "/api";
@@ -58,6 +65,14 @@ type ColumnAnalysisDto = {
   mean_value: number | null;
   median_value: number | null;
   std_deviation: number | null;
+  q1_value: number | null;
+  q3_value: number | null;
+  iqr_value: number | null;
+  p5_value: number | null;
+  p10_value: number | null;
+  p90_value: number | null;
+  p95_value: number | null;
+  outlier_count: number | null;
   zero_count: number;
   negative_count: number;
 };
@@ -69,6 +84,74 @@ type DataQualityIssueDto = {
   message: string;
 };
 
+type CandidateKeyDto = {
+  columns: string[];
+  key_type: string;
+  evaluated_row_count: number;
+  unique_count: number;
+  uniqueness_percentage: number;
+};
+
+type DuplicateValueExampleDto = {
+  values: Array<string | number | boolean | null>;
+  frequency: number;
+};
+
+type DuplicateGroupDto = {
+  columns: string[];
+  group_count: number;
+  duplicate_count: number;
+  max_frequency: number;
+  examples: DuplicateValueExampleDto[];
+};
+
+type DuplicateAnalysisDto = {
+  candidate_keys?: CandidateKeyDto[] | null;
+  duplicate_groups?: DuplicateGroupDto[] | null;
+  evaluated_combinations?: number | null;
+  columns_truncated?: boolean | null;
+  combinations_truncated?: boolean | null;
+  duplicate_groups_truncated?: boolean | null;
+  truncated?: boolean | null;
+};
+
+type DistributionBinDto = {
+  lower_bound: number;
+  upper_bound: number;
+  count: number;
+  percentage: number;
+};
+
+type DistributionCategoryDto = {
+  value: unknown;
+  count: number;
+  percentage: number;
+};
+
+type ColumnDistributionDto = {
+  column: string;
+  distribution_type: string;
+  valid_count: number;
+  null_count: number;
+  bin_count: number | null;
+  bins?: DistributionBinDto[] | null;
+  category_count: number | null;
+  categories?: DistributionCategoryDto[] | null;
+  categories_truncated: boolean;
+};
+
+type DistributionAnalysisDto = {
+  columns?: ColumnDistributionDto[] | null;
+};
+
+type CorrelationAnalysisDto = {
+  columns?: string[] | null;
+  pearson?: Array<Array<number | null>> | null;
+  spearman?: Array<Array<number | null>> | null;
+  observation_counts?: number[][] | null;
+  truncated?: boolean | null;
+};
+
 type AnalysisResultDto = {
   row_count: number;
   column_count: number;
@@ -76,6 +159,9 @@ type AnalysisResultDto = {
   duplicate_count: number;
   columns: ColumnAnalysisDto[];
   quality_issues: DataQualityIssueDto[];
+  duplicate_analysis?: DuplicateAnalysisDto | null;
+  distribution_analysis?: DistributionAnalysisDto | null;
+  correlation_analysis?: CorrelationAnalysisDto | null;
 };
 
 function mapColumnAnalysis(column: ColumnAnalysisDto): ColumnAnalysis {
@@ -96,6 +182,14 @@ function mapColumnAnalysis(column: ColumnAnalysisDto): ColumnAnalysis {
     stdDeviation: column.std_deviation,
     zeroCount: column.zero_count,
     negativeCount: column.negative_count,
+    q1Value: column.q1_value ?? null,
+    q3Value: column.q3_value ?? null,
+    iqrValue: column.iqr_value ?? null,
+    p5Value: column.p5_value ?? null,
+    p10Value: column.p10_value ?? null,
+    p90Value: column.p90_value ?? null,
+    p95Value: column.p95_value ?? null,
+    outlierCount: column.outlier_count ?? null,
   };
 }
 
@@ -108,6 +202,94 @@ function mapDataQualityIssue(issue: DataQualityIssueDto): DataQualityIssue {
   };
 }
 
+function mapCandidateKey(key: CandidateKeyDto): CandidateKey {
+  return {
+    columns: key.columns,
+    keyType: key.key_type,
+    evaluatedRowCount: key.evaluated_row_count,
+    uniqueCount: key.unique_count,
+    uniquenessPercentage: key.uniqueness_percentage,
+  };
+}
+
+function mapDuplicateValueExample(
+  example: DuplicateValueExampleDto,
+): DuplicateValueExample {
+  return {
+    values: example.values,
+    frequency: example.frequency,
+  };
+}
+
+function mapDuplicateGroup(group: DuplicateGroupDto): DuplicateGroup {
+  return {
+    columns: group.columns,
+    groupCount: group.group_count,
+    duplicateCount: group.duplicate_count,
+    maxFrequency: group.max_frequency,
+    examples: group.examples.map(mapDuplicateValueExample),
+  };
+}
+
+function mapDuplicateAnalysis(
+  analysis?: DuplicateAnalysisDto | null,
+): DuplicateAnalysis {
+  return {
+    candidateKeys: (analysis?.candidate_keys ?? []).map(mapCandidateKey),
+    duplicateGroups: (analysis?.duplicate_groups ?? []).map(mapDuplicateGroup),
+    evaluatedCombinations: analysis?.evaluated_combinations ?? 0,
+    columnsTruncated: analysis?.columns_truncated ?? false,
+    combinationsTruncated: analysis?.combinations_truncated ?? false,
+    duplicateGroupsTruncated: analysis?.duplicate_groups_truncated ?? false,
+    truncated: analysis?.truncated ?? false,
+  };
+}
+
+function mapColumnDistribution(
+  column: ColumnDistributionDto,
+): ColumnDistribution {
+  return {
+    column: column.column,
+    distributionType: column.distribution_type,
+    validCount: column.valid_count,
+    nullCount: column.null_count,
+    binCount: column.bin_count,
+    bins: (column.bins ?? []).map((bin) => ({
+      lowerBound: bin.lower_bound,
+      upperBound: bin.upper_bound,
+      count: bin.count,
+      percentage: bin.percentage,
+    })),
+    categoryCount: column.category_count,
+    categories: (column.categories ?? []).map((category) => ({
+      value: category.value,
+      count: category.count,
+      percentage: category.percentage,
+    })),
+    categoriesTruncated: column.categories_truncated,
+  };
+}
+
+function mapDistributionAnalysis(
+  analysis?: DistributionAnalysisDto | null,
+): DistributionAnalysis {
+  return {
+    columns: (analysis?.columns ?? []).map(mapColumnDistribution),
+  };
+}
+
+function mapCorrelationAnalysis(
+  analysis?: CorrelationAnalysisDto | null,
+): CorrelationAnalysis {
+  return {
+    columns: analysis?.columns ?? [],
+    pearson: analysis?.pearson ?? [],
+    spearman: analysis?.spearman ?? [],
+    observationCounts: analysis?.observation_counts ?? [],
+    truncated: analysis?.truncated ?? false,
+  };
+}
+
 function mapAnalysisResult(result: AnalysisResultDto): AnalysisResult {
   return {
     rowCount: result.row_count,
@@ -116,6 +298,13 @@ function mapAnalysisResult(result: AnalysisResultDto): AnalysisResult {
     duplicateCount: result.duplicate_count,
     columns: result.columns.map(mapColumnAnalysis),
     qualityIssues: result.quality_issues.map(mapDataQualityIssue),
+    duplicateAnalysis: mapDuplicateAnalysis(result.duplicate_analysis),
+    distributionAnalysis: mapDistributionAnalysis(
+      result.distribution_analysis,
+    ),
+    correlationAnalysis: mapCorrelationAnalysis(
+      result.correlation_analysis,
+    ),
   };
 }
 

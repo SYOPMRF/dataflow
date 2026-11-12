@@ -112,60 +112,113 @@ Cuando la persistencia termina correctamente, el archivo pasa a `COMPLETED`.
 
 ### 2.3. Data Service
 
-**Tecnologías:** Python, FastAPI, Pandas y Pydantic.
+**Tecnologías:** Python, FastAPI, Pandas, NumPy y Pydantic.
 
 **Ubicación:** `data-service/`
 
-El Data Service es un componente independiente encargado exclusivamente del análisis de datos.
+El Data Service es un componente independiente encargado de leer, perfilar y analizar los archivos. No gestiona autenticación ni persistencia en PostgreSQL.
 
 Sus responsabilidades son:
 
 - Recibir archivos mediante solicitudes HTTP multipart.
-- Leer archivos CSV y XLSX.
-- Convertir su contenido en DataFrames de Pandas.
-- Calcular métricas generales y estadísticas por columna.
-- Detectar problemas básicos de calidad.
-- Devolver los resultados en formato JSON validado mediante modelos Pydantic.
+- Leer archivos CSV y XLSX y convertirlos en DataFrames.
+- Calcular estadísticas descriptivas y métricas avanzadas por columna.
+- Detectar duplicados y posibles claves candidatas.
+- Calcular distribuciones y correlaciones entre variables numéricas.
+- Ejecutar validaciones de calidad, formato y consistencia semántica.
+- Devolver resultados estructurados y validados mediante modelos Pydantic.
 
 El servicio expone los siguientes endpoints:
 
-| Método | Endpoint    | Propósito                       |
-| ------ | ----------- | ------------------------------- |
-| `GET`  | `/health`   | Comprobar disponibilidad.       |
+| Método | Endpoint | Propósito |
+| --- | --- | --- |
+| `GET` | `/health` | Comprobar disponibilidad. |
 | `POST` | `/analysis` | Analizar un archivo CSV o XLSX. |
 
-#### Análisis estadístico
+#### Perfilado y estadísticas
 
 Para cada archivo se calculan:
 
 - Cantidad de filas y columnas.
-- Cantidad total de valores faltantes.
+- Cantidad total de valores ausentes.
 - Cantidad de filas duplicadas.
 
-Para cada columna se calculan:
+Para cada columna se calculan, cuando corresponda:
 
-- Tipo de dato.
-- Cantidad de valores nulos.
+- Tipo de dato detectado.
+- Cantidad y porcentaje de valores ausentes.
 - Cantidad y porcentaje de valores únicos.
 - Cantidad de valores duplicados.
-- Porcentaje de valores faltantes.
-- Indicador de columna completamente vacía.
 - Valor mínimo y máximo.
 - Media, mediana y desviación estándar para columnas numéricas.
-- Cantidad de ceros y valores negativos para columnas numéricas.
+- Primer y tercer cuartil (Q1 y Q3), rango intercuartílico (IQR) y percentiles 5, 10, 90 y 95.
+- Cantidad de ceros y valores negativos.
+- Cantidad de valores atípicos detectados mediante IQR y Z-score.
 
-#### Detección de calidad
+Las métricas que no corresponden al tipo de dato o que no cuentan con observaciones válidas no se calculan.
 
-`QualityService` identifica los siguientes problemas:
+#### Duplicados y claves candidatas
 
-| Problema                                                 | Severidad |
-| -------------------------------------------------------- | --------- |
-| Columna completamente vacía                              | `HIGH`    |
-| Porcentaje de valores faltantes igual o superior al 50 % | `HIGH`    |
-| Presencia de valores faltantes por debajo del 50 %       | `MEDIUM`  |
-| Presencia de valores negativos                           | `MEDIUM`  |
+`DuplicateService` examina combinaciones de columnas para detectar posibles claves candidatas y presenta grupos de valores repetidos con ejemplos de duplicados.
 
-Estas reglas representan las validaciones implementadas actualmente; no constituyen una evaluación exhaustiva de todas las dimensiones de calidad de datos.
+El resultado incluye ejemplos de valores repetidos, frecuencias y metadatos sobre las combinaciones evaluadas. La búsqueda está acotada para controlar su coste.
+
+Las claves candidatas son indicios estadísticos sobre los datos analizados; no representan restricciones de integridad ni garantías sobre datos futuros.
+
+#### Distribuciones
+
+`DistributionService` genera:
+
+- Histogramas para columnas numéricas.
+- Distribuciones de frecuencias para columnas categóricas.
+
+Los resultados incluyen los intervalos o categorías y sus frecuencias correspondientes.
+
+#### Correlaciones
+
+`CorrelationService` calcula matrices de correlación:
+
+- **Pearson:** mide la fuerza y dirección de relaciones lineales.
+- **Spearman:** mide relaciones monotónicas mediante rangos.
+
+Los resultados incluyen las columnas evaluadas, los coeficientes y el número de observaciones válidas para cada par. Las correlaciones se calculan sobre variables numéricas y pueden incluir coeficientes no disponibles cuando no existen datos suficientes o variación válida.
+
+Una correlación estadística no implica causalidad.
+
+#### Validaciones de calidad
+
+El análisis reúne distintas comprobaciones:
+
+**Reglas generales de calidad**
+
+| Problema | Severidad |
+| --- | --- |
+| Columna completamente vacía | `HIGH` |
+| Al menos 50 % de valores ausentes | `HIGH` |
+| Presencia de valores ausentes | `MEDIUM` |
+| Presencia de valores negativos | `MEDIUM` |
+
+**Validaciones de formato**
+
+`FormatValidationService` comprueba formatos de correo electrónico, URL y fechas en columnas cuyos nombres coinciden con los identificadores reconocidos por el servicio.
+
+**Validaciones semánticas**
+
+`SemanticValidationService` comprueba determinadas relaciones entre campos de pedidos y entregas. Entre ellas:
+
+- Registros entregados sin fecha de entrega (`HIGH`).
+- Descuentos fuera del intervalo permitido de 0 a 100 (`HIGH`).
+- Totales inconsistentes con cantidades, precios unitarios y descuentos, aplicando una tolerancia monetaria (`MEDIUM`).
+
+Las validaciones semánticas dependen de la presencia y reconocimiento de los campos necesarios. Los registros incompletos no siempre permiten evaluar una regla.
+
+Las incidencias pueden incluir severidad, columnas relacionadas y cantidad de filas afectadas.
+
+#### Contrato de respuesta
+
+Los resultados se estructuran mediante modelos Pydantic y se devuelven como JSON. El contrato contempla las métricas generales y por columna, incidencias de calidad, análisis de duplicados, distribuciones y correlaciones.
+
+Spring Boot recibe esta respuesta y se encarga de persistirla en PostgreSQL. El Data Service no escribe directamente en la base de datos de la aplicación.
 
 ### 2.4. PostgreSQL
 
@@ -176,12 +229,26 @@ PostgreSQL almacena la información estructurada de la aplicación.
 Entre sus responsabilidades se encuentran:
 
 - Persistir usuarios.
-- Registrar metadatos de archivos.
+- Registrar metadatos de archivos y el proveedor de almacenamiento asociado.
 - Mantener los estados de procesamiento.
-- Guardar resultados generales de análisis.
-- Guardar métricas por columna.
-- Registrar problemas de calidad.
+- Guardar los resultados generales de análisis.
+- Guardar estadísticas descriptivas y avanzadas por columna.
+- Registrar incidencias de calidad y sus metadatos.
 - Mantener información de eliminaciones pendientes.
+
+#### Persistencia de resultados de análisis
+
+Los resultados se distribuyen en las siguientes entidades principales:
+
+- `AnalysisResultEntity`: conserva las métricas generales del archivo y los bloques de análisis avanzado.
+- `FileColumn`: conserva las estadísticas y métricas calculadas para cada columna.
+- `DataQualityIssueEntity`: conserva las incidencias detectadas, su severidad, las columnas relacionadas y la cantidad de filas afectadas.
+
+Los análisis de duplicados, distribuciones y correlaciones se almacenan como documentos JSONB asociados al resultado general. Esto permite conservar sus estructuras sin convertir cada elemento de esos análisis en una tabla independiente.
+
+La persistencia se realiza desde Spring Boot mediante `AnalysisPersistenceService` dentro de una transacción. La consulta posterior reconstruye el resultado utilizando los datos relacionales y los bloques JSONB almacenados.
+
+#### Migraciones y permisos
 
 Las migraciones del esquema se ejecutan mediante el servicio `migrate` de Docker Compose. El backend utiliza un usuario de base de datos con privilegios limitados para las operaciones normales de la aplicación.
 
@@ -214,9 +281,9 @@ El procesamiento de un archivo sigue estas etapas:
 4. **Registro:** se guardan los metadatos del archivo y se establece el estado `UPLOADED`.
 5. **Inicio del procesamiento:** el backend verifica la propiedad del archivo e intenta cambiar su estado a `PROCESSING` mediante una operación condicional.
 6. **Comunicación:** Spring Boot envía el contenido del archivo a FastAPI.
-7. **Análisis:** Pandas calcula las métricas y `QualityService` detecta los problemas de calidad.
+7. **Análisis:** el Data Service calcula las estadísticas, detecta duplicados y claves candidatas, genera distribuciones y correlaciones, y ejecuta las validaciones de calidad, formato y consistencia semántica.
 8. **Respuesta:** FastAPI devuelve los resultados en JSON.
-9. **Persistencia:** Spring Boot guarda las métricas generales, las métricas por columna y los problemas de calidad dentro de una transacción.
+9. **Persistencia:** Spring Boot guarda las métricas generales y por columna, las incidencias de calidad y los bloques de análisis avanzado dentro de una transacción.
 10. **Finalización:** el archivo pasa a `COMPLETED`.
 11. **Consulta:** el frontend solicita los resultados al backend.
 

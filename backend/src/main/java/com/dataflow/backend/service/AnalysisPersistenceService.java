@@ -67,6 +67,14 @@ public class AnalysisPersistenceService {
         analysisEntity.setColumnCount(analysisResult.columnCount());
         analysisEntity.setMissingCount(analysisResult.missingCount());
         analysisEntity.setDuplicateCount(analysisResult.duplicateCount());
+        analysisEntity.setDuplicateAnalysis(
+                objectMapper.valueToTree(analysisResult.duplicateAnalysis()));
+
+        analysisEntity.setDistributionAnalysis(
+                objectMapper.valueToTree(analysisResult.distributionAnalysis()));
+
+        analysisEntity.setCorrelationAnalysis(
+                objectMapper.valueToTree(analysisResult.correlationAnalysis()));
 
         analysisResultRepository.save(analysisEntity);
 
@@ -88,6 +96,15 @@ public class AnalysisPersistenceService {
             columnEntity.setMeanValue(column.meanValue());
             columnEntity.setMedianValue(column.medianValue());
             columnEntity.setStdDeviation(column.stdDeviation());
+            columnEntity.setQ1Value(column.q1Value());
+            columnEntity.setQ3Value(column.q3Value());
+            columnEntity.setIqrValue(column.iqrValue());
+            columnEntity.setP5Value(column.p5Value());
+            columnEntity.setP10Value(column.p10Value());
+            columnEntity.setP90Value(column.p90Value());
+            columnEntity.setP95Value(column.p95Value());
+            columnEntity.setOutlierCount(column.outlierCount());
+            columnEntity.setZScoreOutlierCount(column.zScoreOutlierCount());
             columnEntity.setZeroCount(column.zeroCount());
             columnEntity.setNegativeCount(column.negativeCount());
 
@@ -102,6 +119,8 @@ public class AnalysisPersistenceService {
             issueEntity.setIssueType(issue.issueType());
             issueEntity.setSeverity(issue.severity());
             issueEntity.setMessage(issue.message());
+            issueEntity.setRelatedColumns(issue.relatedColumns());
+            issueEntity.setAffectedRows(issue.affectedRows());
 
             dataQualityIssueRepository.save(issueEntity);
         }

@@ -1,7 +1,18 @@
 from io import BytesIO
 
+import numpy as np
 import pandas as pd
+
 from app.services.analysis.quality_service import QualityService
+from app.services.analysis.duplicate_service import DuplicateService
+from app.services.analysis.distribution_service import DistributionService
+from app.services.analysis.correlation_service import CorrelationService
+from app.services.analysis.semantic_validation_service import (
+    SemanticValidationService,
+)
+from app.services.analysis.format_validation_service import (
+    FormatValidationService,
+)
 
 
 class AnalysisService:
@@ -20,7 +31,8 @@ class AnalysisService:
         if filename.lower().endswith(".xlsx"):
             return pd.read_excel(BytesIO(file_content))
 
-        raise ValueError("Unsupported file type. Only CSV and XLSX are supported.")
+        raise ValueError(
+            "Unsupported file type. Only CSV and XLSX are supported.")
 
     @staticmethod
     def get_data_type(series: pd.Series) -> str:
@@ -106,32 +118,91 @@ class AnalysisService:
                 "mean_value": None,
                 "median_value": None,
                 "std_deviation": None,
+                "q1_value": None,
+                "q3_value": None,
+                "iqr_value": None,
+                "p5_value": None,
+                "p10_value": None,
+                "p90_value": None,
+                "p95_value": None,
+                "outlier_count": None,
+                "z_score_outlier_count": None,
                 "zero_count": 0,
                 "negative_count": 0,
             }
 
-            if pd.api.types.is_numeric_dtype(series):
-                column_analysis["min_value"] = (
-                    float(series.min()) if not series.dropna().empty else None
-                )
-                column_analysis["max_value"] = (
-                    float(series.max()) if not series.dropna().empty else None
-                )
-                column_analysis["mean_value"] = (
-                    float(series.mean()) if not series.dropna().empty else None
-                )
-                column_analysis["median_value"] = (
-                    float(series.median()) if not series.dropna().empty else None
-                )
-                column_analysis["std_deviation"] = (
-                    float(series.std()) if not series.dropna().empty else None
-                )
-                column_analysis["zero_count"] = int((series == 0).sum())
-                column_analysis["negative_count"] = int((series < 0).sum())
+            if pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(series):
+                numeric_values = pd.to_numeric(series, errors="coerce")
+                valid_values = numeric_values[np.isfinite(numeric_values)]
+
+                column_analysis["zero_count"] = int((valid_values == 0).sum())
+                column_analysis["negative_count"] = int(
+                    (valid_values < 0).sum())
+
+                if not valid_values.empty:
+                    percentiles = valid_values.quantile(
+                        [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
+                    )
+
+                    q1 = float(percentiles.loc[0.25])
+                    q3 = float(percentiles.loc[0.75])
+                    iqr = q3 - q1
+
+                    lower_bound = q1 - (1.5 * iqr)
+                    upper_bound = q3 + (1.5 * iqr)
+
+                    column_analysis["min_value"] = float(valid_values.min())
+                    column_analysis["max_value"] = float(valid_values.max())
+                    column_analysis["mean_value"] = float(valid_values.mean())
+                    column_analysis["median_value"] = float(
+                        percentiles.loc[0.50])
+                    column_analysis["std_deviation"] = (
+                        float(valid_values.std())
+                        if len(valid_values) > 1
+                        else 0.0
+                    )
+
+                    column_analysis["q1_value"] = q1
+                    column_analysis["q3_value"] = q3
+                    column_analysis["iqr_value"] = iqr
+                    column_analysis["p5_value"] = float(percentiles.loc[0.05])
+                    column_analysis["p10_value"] = float(percentiles.loc[0.10])
+                    column_analysis["p90_value"] = float(percentiles.loc[0.90])
+                    column_analysis["p95_value"] = float(percentiles.loc[0.95])
+
+                    outliers = (
+                        (valid_values < lower_bound)
+                        | (valid_values > upper_bound)
+                    )
+
+                    std_deviation = float(valid_values.std(ddof=0))
+
+                    if std_deviation > 0:
+                        z_scores = (
+                            (valid_values - valid_values.mean()) / std_deviation
+                        )
+                        column_analysis["z_score_outlier_count"] = int(
+                            (z_scores.abs() > 3).sum()
+                        )
+                    else:
+                        column_analysis["z_score_outlier_count"] = 0
+
+                    column_analysis["outlier_count"] = int(outliers.sum())
+                else:
+                    column_analysis["outlier_count"] = 0
+                    column_analysis["z_score_outlier_count"] = 0
 
             columns.append(column_analysis)
 
         quality_issues = QualityService.detect_issues(columns)
+
+        quality_issues.extend(
+            SemanticValidationService.detect_issues(df)
+        )
+
+        quality_issues.extend(
+            FormatValidationService.detect_issues(df)
+        )
 
         return {
             "row_count": int(len(df)),
@@ -140,6 +211,9 @@ class AnalysisService:
             "duplicate_count": duplicate_rows,
             "columns": columns,
             "quality_issues": quality_issues,
+            "duplicate_analysis": DuplicateService.analyze(df),
+            "distribution_analysis": DistributionService.analyze(df),
+            "correlation_analysis": CorrelationService.analyze(df),
         }
 
     @classmethod

@@ -3,6 +3,13 @@ package com.dataflow.backend.service;
 import com.dataflow.backend.dto.AnalysisResult;
 import com.dataflow.backend.dto.ColumnAnalysis;
 import com.dataflow.backend.dto.DataQualityIssue;
+import com.dataflow.backend.dto.DuplicateAnalysis;
+import com.dataflow.backend.dto.CandidateKey;
+import com.dataflow.backend.dto.DuplicateGroup;
+import com.dataflow.backend.dto.DuplicateValueExample;
+import com.dataflow.backend.dto.DistributionAnalysis;
+import com.dataflow.backend.dto.CorrelationAnalysis;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.dataflow.backend.entity.AnalysisResultEntity;
 import com.dataflow.backend.entity.FileColumn;
 import com.dataflow.backend.entity.DataQualityIssueEntity;
@@ -369,6 +376,38 @@ class FileAnalysisServiceTest {
                 analysisEntity.setMissingCount(3);
                 analysisEntity.setDuplicateCount(1);
 
+                ObjectNode duplicateAnalysisJson = objectMapper.createObjectNode();
+
+                duplicateAnalysisJson.put("truncated", false);
+                duplicateAnalysisJson.put("evaluatedCombinations", 1);
+
+                duplicateAnalysisJson.putArray("candidateKeys")
+                                .addObject()
+                                .put("keyType", "SINGLE")
+                                .put("evaluatedRowCount", 2)
+                                .put("uniqueCount", 2)
+                                .put("uniquenessPercentage", 100.0)
+                                .putArray("columns")
+                                .add("id");
+
+                ObjectNode duplicateGroup = duplicateAnalysisJson
+                                .putArray("duplicateGroups")
+                                .addObject();
+
+                duplicateGroup.put("groupCount", 1);
+                duplicateGroup.put("duplicateCount", 1);
+                duplicateGroup.put("maxFrequency", 2);
+                duplicateGroup.putArray("columns").add("name").add("age");
+
+                ObjectNode example = duplicateGroup
+                                .putArray("examples")
+                                .addObject();
+
+                example.put("frequency", 2);
+                example.putArray("values").add("John").add(25);
+
+                analysisEntity.setDuplicateAnalysis(duplicateAnalysisJson);
+
                 FileColumn column = new FileColumn();
                 column.setFile(file);
                 column.setName("age");
@@ -385,6 +424,14 @@ class FileAnalysisServiceTest {
                 column.setMeanValue(35.5);
                 column.setMedianValue(34.0);
                 column.setStdDeviation(12.5);
+                column.setQ1Value(25.0);
+                column.setQ3Value(45.0);
+                column.setIqrValue(20.0);
+                column.setP5Value(19.0);
+                column.setP10Value(21.0);
+                column.setP90Value(49.0);
+                column.setP95Value(55.0);
+                column.setOutlierCount(2);
                 column.setZeroCount(0);
                 column.setNegativeCount(0);
 
@@ -430,10 +477,95 @@ class FileAnalysisServiceTest {
                 assertEquals(35.5, resultColumn.meanValue());
                 assertEquals(34.0, resultColumn.medianValue());
                 assertEquals(12.5, resultColumn.stdDeviation());
+                assertEquals(25.0, resultColumn.q1Value());
+                assertEquals(45.0, resultColumn.q3Value());
+                assertEquals(20.0, resultColumn.iqrValue());
+                assertEquals(19.0, resultColumn.p5Value());
+                assertEquals(21.0, resultColumn.p10Value());
+                assertEquals(49.0, resultColumn.p90Value());
+                assertEquals(55.0, resultColumn.p95Value());
+                assertEquals(2, resultColumn.outlierCount());
                 assertEquals(0, resultColumn.zeroCount());
                 assertEquals(0, resultColumn.negativeCount());
 
                 assertEquals(0, result.qualityIssues().size());
+
+                assertEquals(false, result.duplicateAnalysis().truncated());
+                assertEquals(1, result.duplicateAnalysis().evaluatedCombinations());
+
+                assertEquals(1, result.duplicateAnalysis().candidateKeys().size());
+
+                CandidateKey candidateKey = result.duplicateAnalysis()
+                                .candidateKeys()
+                                .get(0);
+
+                assertEquals(List.of("id"), candidateKey.columns());
+                assertEquals("SINGLE", candidateKey.keyType());
+                assertEquals(2, candidateKey.evaluatedRowCount());
+                assertEquals(2, candidateKey.uniqueCount());
+                assertEquals(100.0, candidateKey.uniquenessPercentage());
+
+                assertEquals(1, result.duplicateAnalysis().duplicateGroups().size());
+
+                DuplicateGroup duplicateGroupResult = result.duplicateAnalysis()
+                                .duplicateGroups()
+                                .get(0);
+
+                assertEquals(List.of("name", "age"), duplicateGroupResult.columns());
+                assertEquals(1, duplicateGroupResult.groupCount());
+                assertEquals(1, duplicateGroupResult.duplicateCount());
+                assertEquals(2, duplicateGroupResult.maxFrequency());
+
+                assertEquals(1, duplicateGroupResult.examples().size());
+
+                DuplicateValueExample exampleResult = duplicateGroupResult.examples().get(0);
+
+                assertEquals(2, exampleResult.frequency());
+                assertEquals("John", exampleResult.values().get(0));
+                assertEquals(25, exampleResult.values().get(1));
+        }
+
+        @Test
+        void getAnalysisShouldReturnEmptyAdvancedAnalysesWhenPersistedValuesAreNull() {
+                User user = new User();
+                user.setId(1L);
+                user.setEmail("test@dataflow.com");
+
+                File file = new File();
+                file.setId(1L);
+                file.setUser(user);
+                file.setStatus(FileStatus.COMPLETED);
+
+                AnalysisResultEntity analysisEntity = new AnalysisResultEntity();
+                analysisEntity.setFile(file);
+                analysisEntity.setRowCount(10);
+                analysisEntity.setColumnCount(2);
+                analysisEntity.setMissingCount(0);
+                analysisEntity.setDuplicateCount(0);
+                analysisEntity.setDuplicateAnalysis(null);
+                analysisEntity.setDistributionAnalysis(null);
+                analysisEntity.setCorrelationAnalysis(null);
+
+                when(userRepository.findByEmail("test@dataflow.com"))
+                                .thenReturn(Optional.of(user));
+                when(fileRepository.findByIdAndUser(1L, user))
+                                .thenReturn(Optional.of(file));
+                when(analysisResultRepository.findByFileId(1L))
+                                .thenReturn(Optional.of(analysisEntity));
+                when(fileColumnRepository.findAllByFileId(1L))
+                                .thenReturn(List.of());
+                when(dataQualityIssueRepository.findAllByFileId(1L))
+                                .thenReturn(List.of());
+
+                SecurityContextHolder.getContext().setAuthentication(
+                                new UsernamePasswordAuthenticationToken(
+                                                "test@dataflow.com", null));
+
+                AnalysisResult result = fileAnalysisService.getAnalysis(1L);
+
+                assertEquals(DuplicateAnalysis.empty(), result.duplicateAnalysis());
+                assertEquals(DistributionAnalysis.empty(), result.distributionAnalysis());
+                assertEquals(CorrelationAnalysis.empty(), result.correlationAnalysis());
         }
 
         @Test
@@ -512,6 +644,9 @@ class FileAnalysisServiceTest {
                 issue.setSeverity("MEDIUM");
                 issue.setMessage("La columna contiene valores faltantes.");
 
+                issue.setRelatedColumns(List.of("age", "birth_date"));
+                issue.setAffectedRows(3);
+
                 when(userRepository.findByEmail("test@dataflow.com"))
                                 .thenReturn(Optional.of(user));
                 when(fileRepository.findByIdAndUser(1L, user))
@@ -542,6 +677,10 @@ class FileAnalysisServiceTest {
                 assertEquals(
                                 "La columna contiene valores faltantes.",
                                 resultIssue.message());
+                assertEquals(
+                                List.of("age", "birth_date"),
+                                resultIssue.relatedColumns());
+                assertEquals(3, resultIssue.affectedRows());
         }
 
         @Test

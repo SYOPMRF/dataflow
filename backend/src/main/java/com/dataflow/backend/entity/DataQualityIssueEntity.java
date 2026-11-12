@@ -1,6 +1,10 @@
 package com.dataflow.backend.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.util.List;
 
 @Entity
 @Table(name = "data_quality_issues")
@@ -25,6 +29,13 @@ public class DataQualityIssueEntity {
 
     @Column(nullable = false)
     private String message;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "related_columns", columnDefinition = "jsonb", nullable = false)
+    private List<String> relatedColumns = List.of();
+
+    @Column(name = "affected_rows", nullable = false)
+    private int affectedRows;
 
     public Long getId() {
         return id;
@@ -68,5 +79,29 @@ public class DataQualityIssueEntity {
 
     public void setMessage(String message) {
         this.message = message;
+    }
+
+    public List<String> getRelatedColumns() {
+        return relatedColumns;
+    }
+
+    public void setRelatedColumns(List<String> relatedColumns) {
+        this.relatedColumns = relatedColumns == null
+                ? List.of()
+                : List.copyOf(relatedColumns);
+    }
+
+    public int getAffectedRows() {
+        return affectedRows;
+    }
+
+    public void setAffectedRows(int affectedRows) {
+        if (affectedRows < 0) {
+            throw new IllegalArgumentException(
+                    "affectedRows cannot be negative"
+            );
+        }
+
+        this.affectedRows = affectedRows;
     }
 }

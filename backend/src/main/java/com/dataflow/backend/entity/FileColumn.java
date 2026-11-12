@@ -51,6 +51,18 @@ public class FileColumn {
 
     private Double stdDeviation;
 
+    private Double q1Value;
+    private Double q3Value;
+    private Double iqrValue;
+    private Double p5Value;
+    private Double p10Value;
+    private Double p90Value;
+    private Double p95Value;
+    private Integer outlierCount;
+
+    @Column(name = "z_score_outlier_count")
+    private Integer zScoreOutlierCount;
+
     @Column(nullable = false)
     private int zeroCount;
 
@@ -179,6 +191,78 @@ public class FileColumn {
 
     public void setStdDeviation(Double stdDeviation) {
         this.stdDeviation = stdDeviation;
+    }
+
+    public Double getQ1Value() {
+        return q1Value;
+    }
+
+    public void setQ1Value(Double q1Value) {
+        this.q1Value = q1Value;
+    }
+
+    public Double getQ3Value() {
+        return q3Value;
+    }
+
+    public void setQ3Value(Double q3Value) {
+        this.q3Value = q3Value;
+    }
+
+    public Double getIqrValue() {
+        return iqrValue;
+    }
+
+    public void setIqrValue(Double iqrValue) {
+        this.iqrValue = iqrValue;
+    }
+
+    public Double getP5Value() {
+        return p5Value;
+    }
+
+    public void setP5Value(Double p5Value) {
+        this.p5Value = p5Value;
+    }
+
+    public Double getP10Value() {
+        return p10Value;
+    }
+
+    public void setP10Value(Double p10Value) {
+        this.p10Value = p10Value;
+    }
+
+    public Double getP90Value() {
+        return p90Value;
+    }
+
+    public void setP90Value(Double p90Value) {
+        this.p90Value = p90Value;
+    }
+
+    public Double getP95Value() {
+        return p95Value;
+    }
+
+    public void setP95Value(Double p95Value) {
+        this.p95Value = p95Value;
+    }
+
+    public Integer getOutlierCount() {
+        return outlierCount;
+    }
+
+    public void setOutlierCount(Integer outlierCount) {
+        this.outlierCount = outlierCount;
+    }
+
+    public Integer getZScoreOutlierCount() {
+        return zScoreOutlierCount;
+    }
+
+    public void setZScoreOutlierCount(Integer zScoreOutlierCount) {
+        this.zScoreOutlierCount = zScoreOutlierCount;
     }
 
     public int getZeroCount() {

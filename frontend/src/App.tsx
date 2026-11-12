@@ -1,8 +1,11 @@
+import AppIcon, { type AppIconName } from "./components/AppIcon";
 import { useEffect, useRef, useState } from "react";
 import AuthScreen from "./components/AuthScreen";
 import { ApiError, api } from "./services/api";
 import type { AnalysisResult, FileResponse, LoginResponse } from "./types/api";
 import "./App.css";
+import DistributionAnalysis from "./components/DistributionAnalysis";
+import CorrelationAnalysis from "./components/CorrelationAnalysis";
 
 const SESSION_STORAGE_KEY = "dataflow.session";
 
@@ -46,7 +49,7 @@ function getFileStatus(status: FileResponse["status"]) {
     case "COMPLETED":
       return { label: "Completado", className: "status-complete" };
     case "PROCESSING":
-      return { label: "Procesando", className: "status-pending" };
+      return { label: "Procesando", className: "status-processing" };
     case "FAILED":
       return { label: "Error", className: "status-error" };
     case "UPLOADED":
@@ -54,9 +57,9 @@ function getFileStatus(status: FileResponse["status"]) {
   }
 }
 
-const navigation = [
-  { label: "Resumen", icon: "▦" },
-  { label: "Mis archivos", icon: "▤" },
+const navigation: { label: string; icon: AppIconName }[] = [
+  { label: "Resumen", icon: "dashboard" },
+  { label: "Mis archivos", icon: "files" },
 ];
 
 function App() {
@@ -313,8 +316,8 @@ function App() {
               ? `El archivo se cargó correctamente, pero no fue posible actualizar la lista: ${error.message}`
               : "El archivo se cargó correctamente, pero no fue posible actualizar la lista.",
           );
-
           setNotice("");
+          setActivePage("Mis archivos");
         }
       }
     } finally {
@@ -451,7 +454,7 @@ function App() {
           }}
         >
           <span className="brand-mark">
-            <span>↗</span>
+            <span><AppIcon name="chart" size={22} /></span>
           </span>
           <span>
             data<span className="brand-light">flow</span>
@@ -467,7 +470,9 @@ function App() {
               className={`nav-item ${activePage === item.label ? "active" : ""}`}
               onClick={() => setActivePage(item.label)}
             >
-              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-icon">
+                <AppIcon name={item.icon} size={19} />
+              </span>
               {item.label}
               {item.label === "Mis archivos" && (
                 <span className="nav-count">{files.length}</span>
@@ -478,10 +483,10 @@ function App() {
 
         <div className="sidebar-bottom">
           <div className="help-card">
-            <div className="help-icon">✦</div>
+            <div className="help-icon"><AppIcon name="sparkles" size={20} /></div>
             <strong>¿Primera vez aquí?</strong>
             <p>Sube tus datos y descubre qué contienen.</p>
-            <button onClick={openFilePicker}>
+            <button onClick={() => setActivePage("Nuevo análisis")}>
               Analizar un archivo <span>→</span>
             </button>
           </div>
@@ -499,7 +504,9 @@ function App() {
               title="Cerrar sesión"
               onClick={() => setShowLogoutDialog(true)}
             >
-              <span aria-hidden="true">↪</span>
+              <span aria-hidden="true">
+                <AppIcon name="logout" size={18} />
+              </span>
               <span className="profile-menu-label">Cerrar sesión</span>
             </button>
           </div>
@@ -522,13 +529,36 @@ function App() {
               aria-label="Notificaciones"
               title="Notificaciones"
             >
-              ♧
+              <AppIcon name="bell" size={19} />
             </button>
             <div className="top-avatar">DF</div>
           </div>
         </header>
 
         <div className="page-content">
+
+        <input
+          ref={fileInputRef}
+          className="visually-hidden"
+          type="file"
+          accept=".csv,.xlsx"
+          onChange={(event) => {
+            chooseFile(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
+
+        {notice && (
+          <p
+            className={`notice ${noticeType === "info" ? "notice-info" : "notice-error"}`}
+            role={noticeType === "error" ? "alert" : "status"}
+          >
+            {notice}
+          </p>
+        )}
+
+        {activePage !== "Resultados" && (
+
           <section className="welcome-section">
             <div>
               <div className="eyebrow">
@@ -537,62 +567,103 @@ function App() {
               <h1>
                 {activePage === "Resumen"
                   ? "Tus datos, más claros."
-                  : "Mis archivos."}
+                  : activePage === "Mis archivos"
+                    ? "Mis archivos."
+                    : "Nuevo análisis."}
               </h1>
               <p className="welcome-description">
                 {activePage === "Resumen"
                   ? "Sube un archivo y deja que el análisis comience."
-                  : "Consulta tus archivos y prepara tus próximos análisis."}
+                  : activePage === "Mis archivos"
+                    ? "Consulta tus archivos y prepara tus próximos análisis."
+                    : "Selecciona un archivo CSV o XLSX para comenzar."}
               </p>
             </div>
-            <button className="primary-button" onClick={openFilePicker}>
+            <button className="primary-button" onClick={() => setActivePage("Nuevo análisis")}>
               <span className="button-plus">＋</span> Nuevo análisis
             </button>
           </section>
+        )}
 
-          <section className="stats-grid" aria-label="Resumen de actividad">
-            <article className="stat-card">
-              <div className="stat-top">
-                <span>Archivos cargados</span>
-                <span className="stat-icon purple">▤</span>
-              </div>
-              <div className="stat-value">
-                {files.length.toString().padStart(2, "0")}
-              </div>
-              <div className="stat-caption">Tus datos en un solo lugar</div>
-            </article>
+        {activePage === "Resumen" && (
+          <section className="dashboard-overview" aria-label="Resumen de actividad">
+            <div className="dashboard-metrics">
+              <article className="dashboard-metric dashboard-metric-total">
+                <div className="dashboard-metric-heading">
+                  <span>ARCHIVOS CARGADOS</span>
+                  <span className="dashboard-metric-icon">
+                    <AppIcon name="files" size={20} />
+                  </span>
+                </div>
+                <strong>{files.length.toLocaleString("es-CO")}</strong>
+                <p>Archivos almacenados en tu espacio de trabajo</p>
+              </article>
 
-            <article className="stat-card">
-              <div className="stat-top">
-                <span>Análisis completados</span>
-                <span className="stat-icon green">✓</span>
-              </div>
-              <div className="stat-value">
-                {files
-                  .filter((file) => file.status === "COMPLETED")
-                  .length.toString()
-                  .padStart(2, "0")}
-              </div>
-              <div className="stat-caption">
-                <span className="tiny-green-dot" /> Archivos listos para
-                consultar
-              </div>
-            </article>
+              <article className="dashboard-metric dashboard-metric-completed">
+                <div className="dashboard-metric-heading">
+                  <span>ANÁLISIS COMPLETADOS</span>
+                  <span className="dashboard-metric-icon">
+                    <AppIcon name="check" size={20} />
+                  </span>
+                </div>
+                <strong>
+                  {files.filter((file) => file.status === "COMPLETED").length.toLocaleString("es-CO")}
+                </strong>
+                <p>Análisis disponibles para consultar</p>
+              </article>
+            </div>
 
-            <article className="stat-card">
-              <div className="stat-top">
-                <span>Calidad de los datos</span>
-                <span className="stat-icon amber">◇</span>
+            <section className="dashboard-status-panel" aria-labelledby="status-panel-title">
+              <div className="dashboard-panel-heading">
+                <div>
+                  <span className="dashboard-panel-eyebrow">ACTIVIDAD</span>
+                  <h2 id="status-panel-title">Estado de tus archivos</h2>
+                </div>
+                <span className="dashboard-total-label">
+                  {files.length.toLocaleString("es-CO")} en total
+                </span>
               </div>
-              <div className="stat-value">
-                — <span className="stat-trend">sin calcular</span>
+
+              <div className="dashboard-status-list">
+                {[
+                  { status: "COMPLETED", label: "Completados", className: "completed", icon: "check" as const },
+                  { status: "PROCESSING", label: "Procesando", className: "processing", icon: "clock" as const },
+                  { status: "UPLOADED", label: "Pendientes", className: "pending", icon: "upload" as const },
+                  { status: "FAILED", label: "Con errores", className: "failed", icon: "alert" as const },
+                ].map((item) => {
+                  const count = files.filter((file) => file.status === item.status).length;
+                  const percentage = files.length === 0 ? 0 : (count / files.length) * 100;
+
+                  return (
+                    <div className="dashboard-status-item" key={item.status}>
+                      <div className="dashboard-status-info">
+                        <span className={`dashboard-status-icon ${item.className}`}>
+                          <AppIcon name={item.icon} size={16} />
+                        </span>
+                        <span>{item.label}</span>
+                        <strong>{count.toLocaleString("es-CO")}</strong>
+                      </div>
+                      <div
+                        className="dashboard-status-track"
+                        role="progressbar"
+                        aria-label={`${item.label}: ${count} archivos`}
+                        aria-valuenow={count}
+                        aria-valuemin={0}
+                        aria-valuemax={files.length}
+                      >
+                        <span
+                          className={`dashboard-status-fill ${item.className}`}
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="stat-caption">
-                Se mostrará cuando definamos una métrica de calidad agregada
-              </div>
-            </article>
+            </section>
           </section>
-
+        )}
+        {activePage === "Nuevo análisis" && (
           <section className="upload-section">
             <div className="section-heading">
               <div>
@@ -617,16 +688,6 @@ function App() {
                 chooseFile(event.dataTransfer.files[0]);
               }}
             >
-              <input
-                ref={fileInputRef}
-                className="visually-hidden"
-                type="file"
-                accept=".csv,.xlsx"
-                onChange={(event) => {
-                  chooseFile(event.target.files?.[0]);
-                  event.target.value = "";
-                }}
-              />
               <div className="upload-icon">
                 <span>↑</span>
               </div>
@@ -680,38 +741,56 @@ function App() {
                 </button>
               </div>
             )}
-            {notice && (
-              <p
-                className={`notice ${noticeType === "info" ? "notice-info" : "notice-error"}`}
-                role={noticeType === "error" ? "alert" : "status"}
-              >
-                {notice}
-              </p>
-            )}
-          </section>
 
+          </section>
+        )}
+
+        {(activePage === "Resumen" || activePage === "Mis archivos") && (
           <section className="files-section">
-            <div className="section-heading files-heading">
-              <div>
-                <h2>
-                  {activePage === "Resumen"
-                    ? "Archivos recientes"
-                    : "Todos los archivos"}
-                </h2>
-                <p>Un vistazo rápido a tu actividad reciente.</p>
+            {activePage === "Mis archivos" ? (
+              <div className="library-heading">
+                <div className="library-heading-top">
+                  <div className="library-title-group">
+                    <span className="library-eyebrow">DATA WORKSPACE / BIBLIOTECA</span>
+                    <h2>Mis archivos</h2>
+                    <p>Gestiona tus conjuntos de datos y consulta sus análisis.</p>
+                  </div>
+                  <button
+                    className="text-button"
+                    onClick={() => setActivePage("Resumen")}
+                  >
+                    Volver al resumen <span>→</span>
+                  </button>
+                </div>
+                <div className="library-metrics">
+                  <div className="library-metric">
+                    <span className="library-metric-label">TOTAL DE ARCHIVOS</span>
+                    <strong>{files.length.toLocaleString("es-CO")}</strong>
+                  </div>
+                  <div className="library-metric">
+                    <span className="library-metric-label">COMPLETADOS</span>
+                    <strong>{files.filter((file) => file.status === "COMPLETED").length.toLocaleString("es-CO")}</strong>
+                  </div>
+                  <div className="library-metric">
+                    <span className="library-metric-label">PENDIENTES</span>
+                    <strong>{files.filter((file) => file.status === "UPLOADED").length.toLocaleString("es-CO")}</strong>
+                  </div>
+                </div>
               </div>
-              <button
-                className="text-button"
-                onClick={() =>
-                  setActivePage(
-                    activePage === "Resumen" ? "Mis archivos" : "Resumen",
-                  )
-                }
-              >
-                {activePage === "Resumen" ? "Ver todos" : "Volver al resumen"}{" "}
-                <span>→</span>
-              </button>
-            </div>
+            ) : (
+              <div className="section-heading files-heading">
+                <div>
+                  <h2>Archivos recientes</h2>
+                  <p>Un vistazo rápido a tu actividad reciente.</p>
+                </div>
+                <button
+                  className="text-button"
+                  onClick={() => setActivePage("Mis archivos")}
+                >
+                  Ver todos <span>→</span>
+                </button>
+              </div>
+            )}
 
             <div className="files-table">
               <div className="table-header">
@@ -719,7 +798,7 @@ function App() {
                 <span>FECHA</span>
                 <span>TAMAÑO</span>
                 <span>ESTADO</span>
-                <span />
+                <span className="table-actions-heading">ACCIONES</span>
               </div>
 
               {filesLoading && (
@@ -750,7 +829,7 @@ function App() {
 
               {!filesLoading &&
                 !filesError &&
-                files.map((file) => {
+                (activePage === "Resumen" ? files.slice(0, 5) : files).map((file) => {
                   const status = getFileStatus(file.status);
                   const isCsv = file.originalName
                     .toLowerCase()
@@ -823,6 +902,7 @@ function App() {
                 })}
             </div>
           </section>
+        )}
 
           {activePage === "Resultados" && (
             <section className="files-section" aria-labelledby="results-title">
@@ -994,10 +1074,312 @@ function App() {
                                 {column.negativeCount.toLocaleString("es-CO")}
                               </strong>
                             </div>
+                          {column.q1Value !== null && (
+                            <div className="analysis-metric">
+                              <span>Primer cuartil (Q1)</span>
+                              <strong>{formatAnalysisValue(column.q1Value)}</strong>
+                            </div>
+                          )}
+
+                          {column.q3Value !== null && (
+                            <div className="analysis-metric">
+                              <span>Tercer cuartil (Q3)</span>
+                              <strong>{formatAnalysisValue(column.q3Value)}</strong>
+                            </div>
+                          )}
+
+                          {column.iqrValue !== null && (
+                            <div className="analysis-metric">
+                              <span>Rango intercuartílico (IQR)</span>
+                              <strong>{formatAnalysisValue(column.iqrValue)}</strong>
+                            </div>
+                          )}
+
+                          {column.p5Value !== null && (
+                            <div className="analysis-metric">
+                              <span>Percentil 5</span>
+                              <strong>{formatAnalysisValue(column.p5Value)}</strong>
+                            </div>
+                          )}
+
+                          {column.p10Value !== null && (
+                            <div className="analysis-metric">
+                              <span>Percentil 10</span>
+                              <strong>{formatAnalysisValue(column.p10Value)}</strong>
+                            </div>
+                          )}
+
+                          {column.p90Value !== null && (
+                            <div className="analysis-metric">
+                              <span>Percentil 90</span>
+                              <strong>{formatAnalysisValue(column.p90Value)}</strong>
+                            </div>
+                          )}
+
+                          {column.p95Value !== null && (
+                            <div className="analysis-metric">
+                              <span>Percentil 95</span>
+                              <strong>{formatAnalysisValue(column.p95Value)}</strong>
+                            </div>
+                          )}
+
+                          {column.outlierCount !== null && (
+                            <div className="analysis-metric">
+                              <span>Valores atípicos</span>
+                              <strong>
+                                {column.outlierCount.toLocaleString("es-CO")}
+                              </strong>
+                            </div>
+                          )}
                           </div>
                         </details>
                       ))}
                     </div>
+                  </div>
+
+                  <DistributionAnalysis
+                    analysis={analysisResult.distributionAnalysis}
+                  />
+
+                  <CorrelationAnalysis
+                    analysis={analysisResult.correlationAnalysis}
+                  />
+
+                  <div className="files-section">
+                    <div className="section-heading">
+                      <div>
+                        <h2>Análisis de duplicados</h2>
+                        <p>
+                          Claves candidatas y valores que se repiten en columnas individuales.
+                          Las repeticiones no necesariamente indican errores en los datos.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="duplicate-analysis-grid">
+                      <article className="duplicate-analysis-card">
+                        <div className="duplicate-analysis-heading">
+                          <h3>Claves candidatas</h3>
+                          <span>
+                            {analysisResult.duplicateAnalysis.candidateKeys.length.toLocaleString(
+                              "es-CO",
+                            )}
+                          </span>
+                        </div>
+
+                        {analysisResult.duplicateAnalysis.candidateKeys.length === 0 ? (
+                          <p className="notice notice-info" role="status">
+                            No se identificaron combinaciones que cumplan los
+                            criterios de clave candidata.
+                          </p>
+                        ) : (
+                          <div className="duplicate-analysis-list">
+                            {!analysisResult.duplicateAnalysis.candidateKeys.some(
+                              (candidate) => candidate.keyType === "SINGLE",
+                            ) && (
+                              <p className="notice notice-info" role="status">
+                                No se identificaron claves individuales que sean únicas
+                                en las filas evaluadas.
+                              </p>
+                            )}
+                            {analysisResult.duplicateAnalysis.candidateKeys
+                                .filter((candidate) => candidate.keyType === "SINGLE")
+                                .slice(0, 10)
+                                .map((candidate, index) => (
+                                <article
+                                  className="duplicate-analysis-item"
+                                  key={`${candidate.columns.join("-")}-${index}`}
+                                >
+                                  <strong>{candidate.columns.join(" + ")}</strong>
+
+                                  <span>Clave individual</span>
+
+                                  <div className="duplicate-analysis-metadata">
+                                    <span>
+                                      Unicidad:{" "}
+                                      {formatAnalysisValue(candidate.uniquenessPercentage)}%
+                                    </span>
+                                    <span>
+                                      Filas evaluadas:{" "}
+                                      {candidate.evaluatedRowCount.toLocaleString("es-CO")}
+                                    </span>
+                                    <span>
+                                      Valores únicos:{" "}
+                                      {candidate.uniqueCount.toLocaleString("es-CO")}
+                                    </span>
+                                  </div>
+                                </article>
+                              ))}
+
+                            {analysisResult.duplicateAnalysis.candidateKeys.some(
+                              (candidate) => candidate.keyType !== "SINGLE",
+                            ) && (
+                              <details className="duplicate-analysis-item">
+                                <summary>
+                                  <strong>Combinaciones únicas detectadas</strong>
+                                  <span>
+                                    {
+                                      analysisResult.duplicateAnalysis.candidateKeys.filter(
+                                        (candidate) => candidate.keyType !== "SINGLE",
+                                      ).length
+                                    }{" "}
+                                    combinaciones
+                                  </span>
+                                </summary>
+
+                                <div className="duplicate-analysis-list">
+                                  {analysisResult.duplicateAnalysis.candidateKeys
+                                    .filter((candidate) => candidate.keyType !== "SINGLE")
+                                    .map((candidate, index) => (
+                                      <article
+                                        className="duplicate-analysis-item"
+                                        key={`${candidate.columns.join("-")}-${index}`}
+                                      >
+                                        <strong>{candidate.columns.join(" + ")}</strong>
+
+                                        <span>Combinación compuesta</span>
+
+                                        <div className="duplicate-analysis-metadata">
+                                          <span>
+                                            Unicidad:{" "}
+                                            {formatAnalysisValue(candidate.uniquenessPercentage)}%
+                                          </span>
+                                          <span>
+                                            Filas evaluadas:{" "}
+                                            {candidate.evaluatedRowCount.toLocaleString("es-CO")}
+                                          </span>
+                                          <span>
+                                            Valores únicos:{" "}
+                                            {candidate.uniqueCount.toLocaleString("es-CO")}
+                                          </span>
+                                        </div>
+                                      </article>
+                                    ))}
+                                </div>
+                              </details>
+                            )}
+                          </div>
+                        )}
+
+                      <p className="duplicate-analysis-summary">
+                        Las claves candidatas y combinaciones únicas describen la
+                        unicidad estadística de los datos evaluados. Esto no garantiza
+                        que representen identificadores válidos o relevantes para el negocio.
+                      </p>
+                      </article>
+
+                      <article className="duplicate-analysis-card">
+                        <div className="duplicate-analysis-heading">
+                          <h3>Valores repetidos por columna</h3>
+                          <span>
+                            {analysisResult.duplicateAnalysis.duplicateGroups.length.toLocaleString(
+                              "es-CO",
+                            )}
+                          </span>
+                        </div>
+
+                        {analysisResult.duplicateAnalysis.duplicateGroups.length === 0 ? (
+                          <p className="notice notice-info" role="status">
+                            No se encontraron valores repetidos en columnas individuales.
+                          </p>
+                        ) : (
+                          <div className="duplicate-analysis-list">
+                            {analysisResult.duplicateAnalysis.duplicateGroups.map(
+                              (group, index) => (
+                                <details
+                                  className="duplicate-analysis-item"
+                                  key={`${group.columns.join("-")}-${index}`}
+                                >
+                                  <summary>
+                                    <strong>{group.columns.join(" + ")}</strong>
+                                    <span>
+                                      {group.duplicateCount.toLocaleString("es-CO")}{" "}
+                                      apariciones adicionales
+                                    </span>
+                                  </summary>
+
+                                  <div className="duplicate-analysis-metadata">
+                                    <span>
+                                      Grupos:{" "}
+                                      {group.groupCount.toLocaleString("es-CO")}
+                                    </span>
+                                    <span>
+                                      Máxima frecuencia:{" "}
+                                      {group.maxFrequency.toLocaleString("es-CO")}
+                                    </span>
+                                  </div>
+
+                                  {group.examples.length > 0 && (
+                                    <div className="duplicate-analysis-examples">
+                                      <strong>Ejemplos de valores repetidos</strong>
+
+                                      {group.examples.map((example, exampleIndex) => (
+                                        <div
+                                          className="duplicate-analysis-example"
+                                          key={exampleIndex}
+                                        >
+                                          <span>
+                                            {example.values
+                                              .map((value) => formatAnalysisValue(value))
+                                              .join(" · ")}
+                                          </span>
+                                          <span>
+                                            {example.frequency.toLocaleString("es-CO")}{" "}
+                                            apariciones
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </details>
+                              ),
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    </div>
+
+                    <p className="duplicate-analysis-summary">
+                      Combinaciones evaluadas:{" "}
+                      <strong>
+                        {analysisResult.duplicateAnalysis.evaluatedCombinations.toLocaleString(
+                          "es-CO",
+                        )}
+                      </strong>
+                    </p>
+
+                    {analysisResult.duplicateAnalysis.columnsTruncated && (
+                      <p className="notice notice-info" role="status">
+                        El análisis de claves candidatas evaluó un máximo de 12 columnas.
+                        Algunas columnas fueron excluidas.
+                      </p>
+                    )}
+
+                    {analysisResult.duplicateAnalysis.combinationsTruncated && (
+                      <p className="notice notice-info" role="status">
+                        Se alcanzó el límite de combinaciones evaluadas.
+                        Los resultados pueden no incluir todas las combinaciones posibles.
+                      </p>
+                    )}
+
+                    {analysisResult.duplicateAnalysis.candidateKeys.filter(
+                      (candidate) => candidate.keyType !== "SINGLE",
+                    ).length > 10 && (
+                      <p className="notice notice-info" role="status">
+                        Se muestran las primeras 10 combinaciones únicas de{" "}
+                        {analysisResult.duplicateAnalysis.candidateKeys.filter(
+                          (candidate) => candidate.keyType !== "SINGLE",
+                        ).length.toLocaleString("es-CO")}{" "}
+                        detectadas. Las demás se omitieron únicamente de la presentación.
+                      </p>
+                    )}
+
+                    {analysisResult.duplicateAnalysis.duplicateGroupsTruncated && (
+                      <p className="notice notice-info" role="status">
+                        Se muestran como máximo 20 ejemplos de grupos de valores repetidos por
+                        columna. El total de grupos detectados sigue estando disponible.
+                      </p>
+                    )}
                   </div>
 
                   <div className="files-section">

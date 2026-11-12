@@ -177,23 +177,42 @@ El backend coordina el procesamiento y envía el contenido al Data Service para 
 
 Mostrar los resultados generales esperados para el archivo de ejemplo:
 
-| Métrica           | Resultado esperado |
-| ----------------- | -----------------: |
-| Filas             |                  4 |
-| Columnas          |                  3 |
-| Valores faltantes |                  0 |
-| Filas duplicadas  |                  1 |
+| Métrica | Resultado esperado |
+| --- | ---: |
+| Filas | 4 |
+| Columnas | 3 |
+| Valores faltantes | 0 |
+| Filas duplicadas | 1 |
 
 Después, desplegar las estadísticas de cada columna para mostrar:
 
-- Tipo de dato.
-- Valores faltantes.
-- Valores únicos.
-- Media.
-- Mínimo y máximo.
-- Mediana.
-- Desviación estándar.
-- Valores cero y negativos.
+- Tipo de dato y valores ausentes.
+- Cantidad y porcentaje de valores únicos y duplicados.
+- Mínimo, máximo, media, mediana y desviación estándar, cuando corresponda.
+- Cuartiles, rango intercuartílico y percentiles.
+- Cantidad de ceros, valores negativos y valores atípicos detectados mediante IQR y Z-score.
+
+Mostrar también las secciones de análisis avanzado:
+
+**Duplicados y claves candidatas**
+
+- Combinaciones de columnas evaluadas.
+- Posibles claves candidatas, si se identifican.
+- Ejemplos de valores repetidos y sus frecuencias.
+
+Para este archivo, el análisis no identifica claves candidatas y presenta valores repetidos como `Alice`, `25` y `3000`, cada uno con frecuencia 2.
+
+**Distribuciones**
+
+- Histogramas para las columnas numéricas `age` y `salary`.
+- Distribución categórica de `name`: Alice (2), Bob (1) y Charlie (1).
+
+**Correlaciones**
+
+- Pearson entre `age` y `salary`: 0.71, con 4 observaciones.
+- Spearman entre `age` y `salary`: 0.78, con 4 observaciones.
+
+Los coeficientes muestran una asociación positiva en este pequeño conjunto de ejemplo; no permiten establecer causalidad ni extraer conclusiones generales.
 
 Finalmente, mostrar la sección de calidad de los datos.
 
@@ -253,11 +272,15 @@ Las siguientes limitaciones deben tenerse en cuenta:
 
 - La tarjeta de calidad del resumen todavía no calcula una métrica agregada.
 - La calidad se presenta mediante las incidencias detectadas durante el análisis individual.
-- Las reglas de calidad son básicas y no representan una evaluación exhaustiva.
+- Las reglas implementadas cubren comprobaciones generales, formatos reconocidos y determinadas consistencias semánticas; no representan una evaluación exhaustiva de todas las dimensiones de calidad.
+- Las validaciones de formato y semánticas dependen de los nombres de columnas reconocidos y de la información disponible en cada archivo.
+- La detección de claves candidatas es una aproximación estadística sobre los datos analizados, no una garantía de integridad.
+- Las correlaciones Pearson y Spearman describen asociaciones estadísticas y no permiten establecer causalidad.
+- Algunas evaluaciones están acotadas para controlar su coste.
 - El procesamiento se ejecuta mediante solicitudes al backend y al Data Service; no se presenta como un sistema distribuido de procesamiento por lotes.
 - La infraestructura implementada y probada corresponde al entorno local con Docker Compose.
 - El almacenamiento S3-compatible está implementado y probado localmente mediante PGSTY Silo.
-- El despliegue en AWS, el aprovisionamiento mediante Terraform y la orquestación con Kubernetes siguen siendo evoluciones futuras.
+- El despliegue en AWS y la orquestación con Kubernetes siguen siendo evoluciones futuras.
 - La migración automática de archivos existentes entre proveedores de almacenamiento no está implementada.
 
 ---

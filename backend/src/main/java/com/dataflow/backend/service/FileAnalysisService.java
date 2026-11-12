@@ -3,6 +3,9 @@ package com.dataflow.backend.service;
 import com.dataflow.backend.dto.AnalysisResult;
 import com.dataflow.backend.dto.ColumnAnalysis;
 import com.dataflow.backend.dto.DataQualityIssue;
+import com.dataflow.backend.dto.DuplicateAnalysis;
+import com.dataflow.backend.dto.DistributionAnalysis;
+import com.dataflow.backend.dto.CorrelationAnalysis;
 import com.dataflow.backend.entity.AnalysisResultEntity;
 import com.dataflow.backend.entity.File;
 import com.dataflow.backend.entity.FileColumn;
@@ -21,6 +24,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
@@ -37,6 +42,7 @@ public class FileAnalysisService {
         private final AnalysisPersistenceService analysisPersistenceService;
 
         private static final String VALUE_FORMAT_PREFIX = "DFJSON1:";
+        private static final Logger logger = LoggerFactory.getLogger(FileAnalysisService.class);
 
         private final ObjectMapper objectMapper;
 
@@ -121,6 +127,8 @@ public class FileAnalysisService {
                         return analysisResult;
 
                 } catch (Exception exception) {
+                        logger.error("Failed to process file with id {}", fileId, exception);
+
                         fileRepository.markAsFailedIfProcessing(
                                         fileId,
                                         FileStatus.PROCESSING,
@@ -128,6 +136,56 @@ public class FileAnalysisService {
 
                         throw new FileProcessingException(
                                         "Failed to process file",
+                                        exception);
+                }
+        }
+
+        private DuplicateAnalysis deserializeDuplicateAnalysis(
+                        AnalysisResultEntity analysisEntity) {
+
+                if (analysisEntity.getDuplicateAnalysis() == null) {
+                        return DuplicateAnalysis.empty();
+                }
+
+                try {
+                        return objectMapper.treeToValue(
+                                        analysisEntity.getDuplicateAnalysis(),
+                                        DuplicateAnalysis.class);
+                } catch (JsonProcessingException exception) {
+                        throw new IllegalStateException(
+                                        "Failed to deserialize duplicate analysis",
+                                        exception);
+                }
+        }
+
+        private DistributionAnalysis deserializeDistributionAnalysis(
+                        AnalysisResultEntity analysisEntity) {
+                if (analysisEntity.getDistributionAnalysis() == null) {
+                        return DistributionAnalysis.empty();
+                }
+                try {
+                        return objectMapper.treeToValue(
+                                        analysisEntity.getDistributionAnalysis(),
+                                        DistributionAnalysis.class);
+                } catch (JsonProcessingException exception) {
+                        throw new IllegalStateException(
+                                        "Failed to deserialize distribution analysis",
+                                        exception);
+                }
+        }
+
+        private CorrelationAnalysis deserializeCorrelationAnalysis(
+                        AnalysisResultEntity analysisEntity) {
+                if (analysisEntity.getCorrelationAnalysis() == null) {
+                        return CorrelationAnalysis.empty();
+                }
+                try {
+                        return objectMapper.treeToValue(
+                                        analysisEntity.getCorrelationAnalysis(),
+                                        CorrelationAnalysis.class);
+                } catch (JsonProcessingException exception) {
+                        throw new IllegalStateException(
+                                        "Failed to deserialize correlation analysis",
                                         exception);
                 }
         }
@@ -165,7 +223,16 @@ public class FileAnalysisService {
                                                 column.getMedianValue(),
                                                 column.getStdDeviation(),
                                                 column.getZeroCount(),
-                                                column.getNegativeCount()))
+                                                column.getNegativeCount(),
+                                                column.getQ1Value(),
+                                                column.getQ3Value(),
+                                                column.getIqrValue(),
+                                                column.getP5Value(),
+                                                column.getP10Value(),
+                                                column.getP90Value(),
+                                                column.getP95Value(),
+                                                column.getOutlierCount(),
+                                                column.getZScoreOutlierCount()))
                                 .toList();
 
                 var qualityIssues = dataQualityIssueRepository.findAllByFileId(fileId)
@@ -174,7 +241,9 @@ public class FileAnalysisService {
                                                 issue.getColumnName(),
                                                 issue.getIssueType(),
                                                 issue.getSeverity(),
-                                                issue.getMessage()))
+                                                issue.getMessage(),
+                                                issue.getRelatedColumns(),
+                                                issue.getAffectedRows()))
                                 .toList();
 
                 return new AnalysisResult(
@@ -183,6 +252,9 @@ public class FileAnalysisService {
                                 analysisEntity.getMissingCount(),
                                 analysisEntity.getDuplicateCount(),
                                 columns,
-                                qualityIssues);
+                                qualityIssues,
+                                deserializeDuplicateAnalysis(analysisEntity),
+                                deserializeDistributionAnalysis(analysisEntity),
+                                deserializeCorrelationAnalysis(analysisEntity));
         }
 }

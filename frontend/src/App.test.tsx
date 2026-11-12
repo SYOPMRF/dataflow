@@ -67,6 +67,10 @@ describe("App", () => {
       expect(api.getFiles).toHaveBeenCalledTimes(1);
     });
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "＋ Nuevo análisis" }),
+    );
+
     const fileInput = document.querySelector(
       'input[type="file"]',
     ) as HTMLInputElement;
@@ -182,9 +186,64 @@ describe("App", () => {
           stdDeviation: 5,
           zeroCount: 0,
           negativeCount: 0,
+          q1Value: 22.5,
+          q3Value: 27.5,
+          iqrValue: 5,
+          p5Value: 20.5,
+          p10Value: 21,
+          p90Value: 29,
+          p95Value: 29.5,
+          outlierCount: 0,
         },
       ],
       qualityIssues: [],
+      duplicateAnalysis: {
+        candidateKeys: [
+          {
+            columns: ["transaction_id"],
+            keyType: "SINGLE",
+            evaluatedRowCount: 4,
+            uniqueCount: 4,
+            uniquenessPercentage: 100,
+          },
+          {
+            columns: ["customer_id", "order_date"],
+            keyType: "COMPOSITE",
+            evaluatedRowCount: 4,
+            uniqueCount: 4,
+            uniquenessPercentage: 100,
+          },
+        ],
+        duplicateGroups: [
+          {
+            columns: ["city"],
+            groupCount: 3,
+            duplicateCount: 5,
+            maxFrequency: 4,
+            examples: [
+              {
+                values: ["Bogotá"],
+                frequency: 4,
+              },
+            ],
+          },
+        ],
+        evaluatedCombinations: 5,
+        columnsTruncated: false,
+        combinationsTruncated: false,
+        duplicateGroupsTruncated: false,
+        truncated: false,
+      },
+      distributionAnalysis: {
+        columns: [],
+      },
+      correlationAnalysis: {
+        columns: [],
+        pearson: [],
+        spearman: [],
+        observationCounts: [],
+        truncated: false,
+      },
     });
 
     render(<App />);
@@ -226,6 +285,27 @@ describe("App", () => {
       screen.getByRole("heading", { name: "Detalle por columna" }),
     ).toBeInTheDocument();
 
+    expect(screen.getByRole("heading", { name: "Análisis de duplicados" }))
+      .toBeInTheDocument();
+
+    expect(screen.getByText("transaction_id")).toBeInTheDocument();
+    expect(screen.getByText("Clave individual")).toBeInTheDocument();
+
+    const compositeKey = screen.getByText("Combinaciones únicas detectadas");
+    fireEvent.click(compositeKey);
+
+    expect(screen.getByText("customer_id + order_date")).toBeInTheDocument();
+    expect(screen.getByText("Combinación compuesta")).toBeInTheDocument();
+
+    const duplicateGroup = screen.getByText("city").closest("summary");
+    expect(duplicateGroup).not.toBeNull();
+    fireEvent.click(duplicateGroup!);
+
+    expect(screen.getByText("Ejemplos de valores repetidos")).toBeInTheDocument();
+    expect(screen.getByText("Bogotá")).toBeInTheDocument();
+    expect(screen.getByText("4 apariciones")).toBeInTheDocument();
+    expect(screen.getByText("5 apariciones adicionales")).toBeInTheDocument();
+
     const columnSummary = screen.getByText("edad").closest("summary");
 
     expect(columnSummary).not.toBeNull();
@@ -241,7 +321,98 @@ describe("App", () => {
 
     expect(screen.getByText("20")).toBeInTheDocument();
     expect(screen.getByText("30")).toBeInTheDocument();
-    expect(screen.getByText("5")).toBeInTheDocument();
+    const standardDeviationMetric = screen
+      .getByText("Desviación estándar")
+      .closest(".analysis-metric");
+
+    expect(standardDeviationMetric).toHaveTextContent("5");
+
+    const iqrMetric = screen
+      .getByText("Rango intercuartílico (IQR)")
+      .closest(".analysis-metric");
+
+    expect(iqrMetric).toHaveTextContent("5");
+  });
+
+  it("recupera los resultados existentes de un archivo completado", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      token: "test-token",
+      user: {
+        id: 1,
+        email: "test@dataflow.com",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    vi.mocked(api.getFiles).mockResolvedValue([
+      {
+        id: 10,
+        originalName: "ventas.csv",
+        storedName: "ventas.csv",
+        fileType: "text/csv",
+        fileSize: 100,
+        status: "COMPLETED",
+        createdAt: "2026-01-01T00:00:00Z",
+        processedAt: "2026-01-01T01:00:00Z",
+      },
+    ]);
+
+    vi.mocked(api.getAnalysis).mockResolvedValue({
+      rowCount: 4,
+      columnCount: 2,
+      missingCount: 0,
+      duplicateCount: 0,
+      columns: [],
+      qualityIssues: [],
+      duplicateAnalysis: {
+        candidateKeys: [],
+        duplicateGroups: [],
+        evaluatedCombinations: 0,
+        columnsTruncated: false,
+        combinationsTruncated: false,
+        duplicateGroupsTruncated: false,
+        truncated: false,
+      },
+      distributionAnalysis: {
+        columns: [],
+      },
+      correlationAnalysis: {
+        columns: [],
+        pearson: [],
+        spearman: [],
+        observationCounts: [],
+        truncated: false,
+      },
+    });
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), {
+      target: { value: "test@dataflow.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Entrar a DataFlow/i }));
+
+    await waitFor(() => {
+      expect(api.getFiles).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver resultados →" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Resultados del análisis" }),
+    ).toBeInTheDocument();
+
+    expect(api.getAnalysis).toHaveBeenCalledWith("test-token", 10);
+    expect(api.processFile).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(api.getFiles).toHaveBeenCalledTimes(2);
+    });
+
+    expect(screen.getByText("4", { selector: ".stat-value" })).toBeInTheDocument();
   });
 
   it("informa si el archivo ya está siendo procesado sin iniciar otro análisis", async () => {
@@ -394,13 +565,11 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Analizar →" }));
 
-    expect(
-      screen.getByRole("button", { name: "Analizando..." }),
-    ).toBeDisabled();
 
     expect(screen.getByRole("status")).toHaveTextContent(
       "Analizando el archivo.",
     );
+
 
     rejectProcess(
       new ApiError("El archivo contiene un formato no válido.", 400),
@@ -412,9 +581,9 @@ describe("App", () => {
 
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Analizar →" })).toBeEnabled();
-    });
+    expect(
+      screen.getByRole("button", { name: "Volver a mis archivos →" }),
+    ).toBeInTheDocument();
 
     expect(api.processFile).toHaveBeenCalledTimes(1);
   });
